@@ -1,0 +1,440 @@
+================================================================================
+                     RECOVERYBOT ECOSYSTEM CLI GUIDE
+================================================================================
+
+This guide explains the composite project structure of the RecoveryBot ecosystem
+and provides commands to start, stop, and manage each service from the CLI.
+
+Created: 2026-01-07
+Location: /home/sparkone/sdd/unified_dashboard/
+
+
+================================================================================
+                              QUICK START
+================================================================================
+
+Start everything:
+    ./ecosystem.sh start
+
+Check status:
+    ./ecosystem.sh status
+
+Stop everything:
+    ./ecosystem.sh stop
+
+
+================================================================================
+                           PROJECT STRUCTURE
+================================================================================
+
+/home/sparkone/sdd/
+├── unified_dashboard/          # THIS PROJECT - Unified Dashboard
+│   ├── ecosystem.sh            # Master orchestration script (START HERE)
+│   ├── start.sh                # Start dashboard only
+│   ├── start-prod.sh           # Production mode
+│   └── scripts/
+│       ├── ollama.sh           # Ollama LLM management
+│       └── docker-services.sh  # Docker container management
+│
+├── Recovery_Bot/               # Main RecoveryBot application
+│   └── memOS/                  # Memory & Agentic Search System
+│       └── server/             # memOS Python Server
+│           ├── start_server.sh
+│           ├── stop_server.sh
+│           ├── status_server.sh
+│           ├── restart_server.sh
+│           └── logs_server.sh
+│
+├── PDF_Extraction_Tools/       # Document Processing & Knowledge Graph
+│   └── api_server.sh           # Comprehensive API management
+│
+├── HRM_Model/                  # HRM Flask Application
+│   └── manage_app.sh           # App management script
+│
+└── ollama/                     # Ollama model data directory
+
+
+================================================================================
+                          SERVICE ARCHITECTURE
+================================================================================
+
+                    ┌─────────────────────────────────────┐
+                    │        Unified Dashboard            │
+                    │      (Port 3100 / 3101)             │
+                    └──────────────┬──────────────────────┘
+                                   │
+          ┌────────────────────────┼────────────────────────┐
+          │                        │                        │
+          ▼                        ▼                        ▼
+    ┌─────────────┐         ┌─────────────┐         ┌─────────────┐
+    │   memOS     │         │  PDF Tools  │         │   Docling   │
+    │ (Port 8001) │         │ (Port 8002) │         │ (Port 8003) │
+    └──────┬──────┘         └──────┬──────┘         └─────────────┘
+           │                       │
+    ┌──────┴───────────────────────┴──────┐
+    │                                      │
+    ▼                                      ▼
+┌─────────────┐   ┌─────────────┐   ┌─────────────┐
+│   Ollama    │   │  PostgreSQL │   │   SearXNG   │
+│(Port 11434) │   │ (Port 5432) │   │ (Port 8888) │
+└─────────────┘   └──────┬──────┘   └─────────────┘
+                         │
+                  ┌──────┴──────┐
+                  │    Redis    │
+                  │ (Port 6379) │
+                  └─────────────┘
+
+
+================================================================================
+                          PORT REFERENCE
+================================================================================
+
+Application Ports:
+  3100    Unified Dashboard Frontend (Vite)
+  3101    Unified Dashboard Backend (Express)
+  8001    memOS Agentic Search Server
+  8002    PDF Extraction Tools API
+  8003    Docling Document Processor
+
+Infrastructure Ports:
+  11434   Ollama LLM Service
+  5432    PostgreSQL Database
+  6379    Redis Cache
+  8888    SearXNG Metasearch
+  6333    Qdrant Vector Store
+  7700    Meilisearch
+
+
+================================================================================
+                      MASTER ORCHESTRATION SCRIPT
+================================================================================
+
+Location: /home/sparkone/sdd/unified_dashboard/ecosystem.sh
+
+This is the primary script for managing the entire ecosystem.
+
+COMMANDS:
+
+  Start all services (in dependency order):
+      ./ecosystem.sh start
+
+  Stop all services:
+      ./ecosystem.sh stop
+
+  Restart all services:
+      ./ecosystem.sh restart
+
+  Check status of all services:
+      ./ecosystem.sh status
+
+  Deep health check:
+      ./ecosystem.sh health
+
+  View logs for a service:
+      ./ecosystem.sh logs memos
+      ./ecosystem.sh logs pdf-tools
+      ./ecosystem.sh logs ollama
+      ./ecosystem.sh logs postgres
+      ./ecosystem.sh logs redis
+      ./ecosystem.sh logs searxng
+      ./ecosystem.sh logs dashboard
+
+
+================================================================================
+                         INDIVIDUAL SERVICES
+================================================================================
+
+------------------------------------------------------------------------------
+UNIFIED DASHBOARD (Port 3100/3101)
+------------------------------------------------------------------------------
+Location: /home/sparkone/sdd/unified_dashboard/
+
+  Start (development):
+      ./start.sh
+
+  Start (production):
+      ./start-prod.sh
+
+  Using npm:
+      npm run start      # Both frontend + backend
+      npm run dev        # Frontend only
+      npm run server     # Backend only
+
+------------------------------------------------------------------------------
+MEMOS SERVER (Port 8001)
+------------------------------------------------------------------------------
+Location: /home/sparkone/sdd/Recovery_Bot/memOS/server/
+
+  Start:
+      ./start_server.sh
+
+  Stop:
+      ./stop_server.sh
+
+  Restart:
+      ./restart_server.sh
+
+  Check status:
+      ./status_server.sh
+
+  View logs:
+      ./logs_server.sh
+
+  Manual start (foreground):
+      source venv/bin/activate
+      uvicorn main:app --host 0.0.0.0 --port 8001
+
+  Health check:
+      curl http://localhost:8001/api/v1/health
+      curl http://localhost:8001/api/v1/system/health/aggregate
+
+------------------------------------------------------------------------------
+PDF EXTRACTION TOOLS (Port 8002)
+------------------------------------------------------------------------------
+Location: /home/sparkone/sdd/PDF_Extraction_Tools/
+
+  Start (default corpus):
+      ./api_server.sh start
+
+  Start with specific domain:
+      ./api_server.sh start --domain fanuc
+      ./api_server.sh start --domain imm
+      ./api_server.sh start --domain full
+
+  Stop:
+      ./api_server.sh stop
+
+  Restart:
+      ./api_server.sh restart
+
+  Check status:
+      ./api_server.sh status
+
+  View logs:
+      ./api_server.sh logs
+      ./api_server.sh tail    # Follow mode
+
+  Quick health test:
+      ./api_server.sh test
+
+  Full API test:
+      ./api_server.sh full-test
+
+  List domains:
+      ./api_server.sh domains
+
+  List endpoints:
+      ./api_server.sh endpoints
+
+  Health check:
+      curl http://localhost:8002/health
+
+------------------------------------------------------------------------------
+OLLAMA LLM SERVICE (Port 11434)
+------------------------------------------------------------------------------
+Location: System service (systemctl)
+
+  Using management script:
+      ./scripts/ollama.sh start
+      ./scripts/ollama.sh stop
+      ./scripts/ollama.sh restart
+      ./scripts/ollama.sh status
+      ./scripts/ollama.sh models
+      ./scripts/ollama.sh logs
+
+  Using systemctl directly:
+      sudo systemctl start ollama
+      sudo systemctl stop ollama
+      sudo systemctl restart ollama
+      sudo systemctl status ollama
+
+  Ollama CLI:
+      ollama list           # List models
+      ollama pull qwen3:8b  # Download model
+      ollama run qwen3:8b   # Interactive chat
+
+  Health check:
+      curl http://localhost:11434/api/version
+      curl http://localhost:11434/api/tags
+
+------------------------------------------------------------------------------
+DOCKER CONTAINERS
+------------------------------------------------------------------------------
+
+  Using management script:
+      ./scripts/docker-services.sh start
+      ./scripts/docker-services.sh stop
+      ./scripts/docker-services.sh status
+      ./scripts/docker-services.sh logs <container>
+
+  Start/stop specific groups:
+      ./scripts/docker-services.sh start memos     # PostgreSQL, Redis, Docling
+      ./scripts/docker-services.sh start searxng   # SearXNG + support containers
+      ./scripts/docker-services.sh start database  # All DB/cache containers
+
+  Direct docker commands:
+      docker ps                          # List running containers
+      docker start memos-postgres        # Start specific container
+      docker stop memos-postgres         # Stop specific container
+      docker logs -f memos-postgres      # Follow logs
+
+  Container list:
+      memos-postgres       PostgreSQL with pgvector (5432)
+      memos-redis          Redis cache (6379)
+      memos-docling        Document processor (8003)
+      searxng              Metasearch engine (8888)
+      searxng-redis        SearXNG cache (internal)
+      searxng-meilisearch  Search index (7700)
+      searxng-qdrant       Vector store (6333)
+      searxng-tor          Tor proxy (internal)
+
+
+================================================================================
+                           HEALTH CHECKS
+================================================================================
+
+Full ecosystem health check:
+    ./ecosystem.sh health
+
+Individual service health endpoints:
+
+    Dashboard:
+        curl http://localhost:3100
+
+    memOS:
+        curl http://localhost:8001/api/v1/health
+        curl http://localhost:8001/api/v1/system/health/aggregate
+
+    PDF Tools:
+        curl http://localhost:8002/health
+        curl http://localhost:8002/health/live
+
+    Ollama:
+        curl http://localhost:11434/api/version
+
+    PostgreSQL:
+        pg_isready -h 127.0.0.1 -p 5432
+
+    Redis:
+        redis-cli ping
+
+
+================================================================================
+                        STARTUP SEQUENCE
+================================================================================
+
+The recommended startup sequence (handled by ecosystem.sh):
+
+    1. Docker Engine       (if not running)
+    2. Ollama              (LLM inference)
+    3. PostgreSQL          (database)
+    4. Redis               (cache)
+    5. SearXNG             (metasearch, optional)
+    6. Docling             (document processor)
+    7. PDF Tools           (knowledge graph - slow startup)
+    8. memOS               (agentic search)
+    9. Dashboard           (unified UI)
+
+Services should be stopped in reverse order.
+
+
+================================================================================
+                          TROUBLESHOOTING
+================================================================================
+
+Service won't start:
+    1. Check if port is already in use:
+       lsof -i:8001
+    2. Check logs:
+       ./ecosystem.sh logs memos
+    3. Manually kill stuck process:
+       kill $(lsof -i:8001 -t)
+
+Docker containers missing:
+    1. Check if they exist:
+       docker ps -a
+    2. Recreate from docker-compose:
+       cd /home/sparkone/sdd/Recovery_Bot/memOS
+       docker-compose up -d
+
+Ollama not responding:
+    1. Check service status:
+       systemctl status ollama
+    2. Check for GPU issues:
+       nvidia-smi
+    3. Restart service:
+       sudo systemctl restart ollama
+
+PDF Tools slow to start:
+    Normal! Graph loading takes 60-90 seconds.
+    Monitor with: tail -f /home/sparkone/sdd/PDF_Extraction_Tools/api_server.log
+
+memOS database issues:
+    1. Ensure PostgreSQL is running:
+       ./scripts/docker-services.sh start memos-postgres
+    2. Run migrations:
+       cd /home/sparkone/sdd/Recovery_Bot/memOS/server
+       source venv/bin/activate
+       alembic upgrade head
+
+
+================================================================================
+                            LOG LOCATIONS
+================================================================================
+
+Dashboard:       ./dashboard.log
+memOS:           Recovery_Bot/memOS/server/logs/
+PDF Tools:       PDF_Extraction_Tools/api_server.log
+Ollama:          journalctl -u ollama
+Docker:          docker logs <container-name>
+
+
+================================================================================
+                          DEVELOPMENT TIPS
+================================================================================
+
+Run dashboard in development mode with hot reload:
+    npm run dev
+
+Run memOS with auto-reload:
+    cd Recovery_Bot/memOS/server
+    source venv/bin/activate
+    uvicorn main:app --reload --port 8001
+
+Run PDF Tools with debug logging:
+    LOG_LEVEL=debug ./api_server.sh start
+
+Monitor GPU usage:
+    watch -n 1 nvidia-smi
+
+Watch all logs simultaneously:
+    # Terminal 1: ./ecosystem.sh logs memos
+    # Terminal 2: ./ecosystem.sh logs pdf-tools
+    # Terminal 3: ./ecosystem.sh logs ollama
+
+
+================================================================================
+                           API DOCUMENTATION
+================================================================================
+
+Interactive API docs (when services are running):
+
+    memOS Swagger:     http://localhost:8001/docs
+    PDF Tools Swagger: http://localhost:8002/docs
+    Docling:           http://localhost:8003/docs
+
+
+================================================================================
+                              CONTACTS
+================================================================================
+
+Project Repository: /home/sparkone/sdd/unified_dashboard
+MCP Infrastructure: /home/sparkone/sdd/mcp_infrastructure
+
+For more details on individual services, see their CLAUDE.md files:
+    - unified_dashboard/CLAUDE.md
+    - Recovery_Bot/memOS/CLAUDE.md
+    - PDF_Extraction_Tools/CLAUDE.md
+
+
+================================================================================

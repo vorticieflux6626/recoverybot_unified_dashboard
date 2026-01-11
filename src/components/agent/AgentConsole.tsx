@@ -211,49 +211,55 @@ export function AgentConsole() {
     loadHistory()
   }, [])
 
-  // Toggle live mode - connect to global event stream
-  const toggleLiveMode = useCallback(() => {
-    if (isLiveMode) {
-      // Disconnect
-      if (globalStreamRef.current) {
-        globalStreamRef.current.close()
-        globalStreamRef.current = null
-      }
-      setIsLiveMode(false)
-      setIsConnected(false)
-    } else {
-      // Connect to global stream
-      const eventSource = new EventSource('/api/agent/stream/global')
-      globalStreamRef.current = eventSource
+  // Connect to global event stream (always live)
+  const connectToGlobalStream = useCallback(() => {
+    // Don't reconnect if already connected
+    if (globalStreamRef.current) return
 
-      eventSource.onopen = () => {
-        setIsConnected(true)
-        setIsLiveMode(true)
-      }
+    const eventSource = new EventSource('/api/agent/stream/global')
+    globalStreamRef.current = eventSource
 
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data)
-          const agentEvent: AgentEvent = {
-            id: `global-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            timestamp: data.timestamp || new Date().toISOString(),
-            eventType: data.type || data.event_type || 'update',
-            agent: data.agent || data.request?.query?.substring(0, 30),
-            data: data.request || data,
-            level: 'info',
-          }
-          setGlobalEvents(prev => [...prev.slice(-200), agentEvent]) // Keep last 200 events
-        } catch (e) {
-          console.error('Failed to parse global SSE event:', e)
+    eventSource.onopen = () => {
+      setIsConnected(true)
+      setIsLiveMode(true)
+    }
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        const agentEvent: AgentEvent = {
+          id: `global-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          timestamp: data.timestamp || new Date().toISOString(),
+          eventType: data.type || data.event_type || 'update',
+          agent: data.agent || data.request?.query?.substring(0, 30),
+          data: data.request || data,
+          level: 'info',
         }
-      }
-
-      eventSource.onerror = () => {
-        setIsConnected(false)
-        setIsLiveMode(false)
+        setGlobalEvents(prev => [...prev.slice(-200), agentEvent]) // Keep last 200 events
+      } catch (e) {
+        console.error('Failed to parse global SSE event:', e)
       }
     }
-  }, [isLiveMode])
+
+    eventSource.onerror = () => {
+      setIsConnected(false)
+      setIsLiveMode(false)
+      globalStreamRef.current = null
+      // Attempt reconnection after 3 seconds
+      setTimeout(() => {
+        if (memosStatus === 'connected') {
+          connectToGlobalStream()
+        }
+      }, 3000)
+    }
+  }, [memosStatus])
+
+  // Auto-connect to live stream when memOS is available
+  useEffect(() => {
+    if (memosStatus === 'connected' && !globalStreamRef.current) {
+      connectToGlobalStream()
+    }
+  }, [memosStatus, connectToGlobalStream])
 
   // Connect to SSE stream
   const connectToStream = useCallback((requestId: string) => {
@@ -430,37 +436,30 @@ export function AgentConsole() {
             </span>
           </div>
 
-          {/* Live Mode Toggle */}
-          <button
-            onClick={toggleLiveMode}
-            className={cn(
-              "flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors",
-              isLiveMode
-                ? "bg-green-600 text-white"
-                : "bg-muted text-muted-foreground hover:bg-accent"
-            )}
-          >
-            {isLiveMode ? (
+          {/* Live Status Indicator */}
+          <div className={cn(
+            "flex items-center gap-2 px-3 py-1.5 rounded-lg",
+            isConnected ? "bg-green-600 text-white" : "bg-muted text-muted-foreground"
+          )}>
+            {isConnected ? (
               <>
                 <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
-                Live Feed Active
+                Live
               </>
             ) : (
               <>
                 <Zap className="w-4 h-4" />
-                Connect Live Feed
+                Connecting...
               </>
             )}
-          </button>
+          </div>
 
           <div className="flex-1" />
 
           {/* Global Events Count */}
-          {isLiveMode && (
-            <span className="text-xs text-muted-foreground">
-              {globalEvents.length} live events
-            </span>
-          )}
+          <span className="text-xs text-muted-foreground">
+            {globalEvents.length} events
+          </span>
         </div>
 
         {/* Test Query Input */}

@@ -105,3 +105,134 @@ export function createSSEConnection(
   if (onError) eventSource.onerror = onError
   return eventSource
 }
+
+// ============================================================================
+// LLM Model Configuration Types & API
+// ============================================================================
+
+export interface ModelConfig {
+  model: string
+  context_window: number
+  temperature: number
+  max_tokens: number
+  description: string
+  notes?: string
+}
+
+export interface EmbeddingConfig {
+  model: string
+  dimensions: number
+  description?: string
+}
+
+export interface LLMConfig {
+  version: string
+  last_updated: string
+  pipeline: Record<string, ModelConfig>
+  utility: Record<string, ModelConfig>
+  embeddings: Record<string, EmbeddingConfig>
+  corpus: Record<string, ModelConfig>
+  presets: Record<string, Record<string, string>>
+}
+
+export interface PresetInfo {
+  name: string
+  description?: string
+  models: Record<string, string>
+}
+
+// Fetch full LLM configuration
+export async function fetchLLMConfig(): Promise<LLMConfig> {
+  const res = await fetch(`${API_BASE}/agent/config/llm-models`)
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: 'Failed to fetch LLM config' }))
+    throw new Error(error.error || 'Failed to fetch LLM config')
+  }
+  return res.json()
+}
+
+// Update a single model assignment
+export async function updateLLMModel(
+  path: string,
+  changes: Partial<ModelConfig>
+): Promise<{ old_value: string; new_value: string }> {
+  const res = await fetch(`${API_BASE}/agent/config/llm-models`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, ...changes }),
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: 'Failed to update model' }))
+    throw new Error(error.error || 'Failed to update model')
+  }
+  return res.json()
+}
+
+// Reload config from YAML file (discards in-memory changes)
+export async function reloadLLMConfig(): Promise<{ version: string; last_updated: string }> {
+  const res = await fetch(`${API_BASE}/agent/config/llm-models/reload`, {
+    method: 'POST',
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: 'Failed to reload config' }))
+    throw new Error(error.error || 'Failed to reload config')
+  }
+  return res.json()
+}
+
+// Save current config to YAML file
+export async function saveLLMConfig(): Promise<{ config_path: string }> {
+  const res = await fetch(`${API_BASE}/agent/config/llm-models/save`, {
+    method: 'POST',
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: 'Failed to save config' }))
+    throw new Error(error.error || 'Failed to save config')
+  }
+  return res.json()
+}
+
+// Fetch available presets
+export async function fetchLLMPresets(): Promise<{ presets: string[]; details: Record<string, PresetInfo> }> {
+  const res = await fetch(`${API_BASE}/agent/config/llm-models/presets`)
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: 'Failed to fetch presets' }))
+    throw new Error(error.error || 'Failed to fetch presets')
+  }
+  return res.json()
+}
+
+// Apply a preset
+export async function applyLLMPreset(presetName: string): Promise<{ preset: string; changes: Record<string, string> }> {
+  const res = await fetch(`${API_BASE}/agent/config/llm-models/presets/${encodeURIComponent(presetName)}`, {
+    method: 'POST',
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: 'Failed to apply preset' }))
+    throw new Error(error.error || 'Failed to apply preset')
+  }
+  return res.json()
+}
+
+// Fetch raw YAML content
+export async function fetchRawYaml(): Promise<string> {
+  const res = await fetch(`${API_BASE}/agent/config/llm-models/raw`)
+  if (!res.ok) {
+    throw new Error('Failed to fetch raw YAML')
+  }
+  return res.text()
+}
+
+// Save raw YAML content
+export async function saveRawYaml(yaml: string): Promise<{ success: boolean }> {
+  const res = await fetch(`${API_BASE}/agent/config/llm-models/raw`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ yaml }),
+  })
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: 'Failed to save YAML' }))
+    throw new Error(error.error || 'Failed to save YAML')
+  }
+  return res.json()
+}

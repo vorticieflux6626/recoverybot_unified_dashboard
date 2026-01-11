@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { Bot, Play, Square, Trash2, ChevronDown, ChevronRight, Clock, Zap, Brain, Search, CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { AgentConfigPanel } from './config'
 
 interface AgentEvent {
   id: string
@@ -282,18 +283,19 @@ export function AgentConsole() {
         setRuns(prev => {
           const updated = [...prev]
           const runIndex = updated.findIndex(r => r.requestId === requestId)
-          if (runIndex !== -1) {
-            updated[runIndex] = {
-              ...updated[runIndex],
-              events: [...updated[runIndex].events, agentEvent],
+          const currentRun = updated[runIndex]
+          if (runIndex !== -1 && currentRun) {
+            const updatedRun: AgentRun = {
+              ...currentRun,
+              events: [...currentRun.events, agentEvent],
             }
 
             // Check for completion
             if (agentEvent.eventType === 'search_completed' || agentEvent.eventType === 'gateway_complete') {
-              updated[runIndex].status = 'completed'
-              updated[runIndex].endTime = new Date().toISOString()
+              updatedRun.status = 'completed'
+              updatedRun.endTime = new Date().toISOString()
               if (data.summary || data.result) {
-                updated[runIndex].summary = data.summary || {
+                updatedRun.summary = data.summary || {
                   duration_ms: data.duration_ms || 0,
                   confidence: data.confidence || 0,
                   agents_executed: data.agents_executed || [],
@@ -303,10 +305,11 @@ export function AgentConsole() {
               }
               setIsRunning(false)
             } else if (agentEvent.eventType === 'search_failed') {
-              updated[runIndex].status = 'failed'
-              updated[runIndex].endTime = new Date().toISOString()
+              updatedRun.status = 'failed'
+              updatedRun.endTime = new Date().toISOString()
               setIsRunning(false)
             }
+            updated[runIndex] = updatedRun
           }
           return updated
         })
@@ -502,6 +505,9 @@ export function AgentConsole() {
           </p>
         )}
       </div>
+
+      {/* Agent Configuration Panel */}
+      <AgentConfigPanel />
 
       <div className="flex gap-4 flex-1 min-h-0">
         {/* Run History */}

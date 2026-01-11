@@ -1,6 +1,6 @@
 # Unified System Dashboard
 
-> **Created**: 2026-01-03 | **Updated**: 2026-01-07 | **Port**: 3100 | **Version**: 0.2.0
+> **Created**: 2026-01-03 | **Updated**: 2026-01-11 | **Port**: 3100 | **Version**: 0.3.0
 
 ## Quick Reference
 
@@ -85,6 +85,36 @@ This dashboard consolidates 14-15 GUI services from the Recovery Bot ecosystem i
 | `/api/logs/stream` | SSE | Real-time log stream |
 | `/api/docs/tree` | GET | Documentation file tree |
 | `/api/docs/content` | GET | Documentation file content |
+| `/api/agent/config/llm-models` | GET | Get LLM model config (proxied) |
+| `/api/agent/config/llm-models` | PUT | Update model assignment |
+| `/api/agent/config/llm-models/reload` | POST | Reload config from YAML |
+| `/api/agent/config/llm-models/save` | POST | Save config to YAML |
+| `/api/agent/config/llm-models/presets` | GET | List available presets |
+| `/api/agent/config/llm-models/presets/:name` | POST | Apply a preset |
+| `/api/agent/config/llm-models/raw` | GET | Get raw YAML content |
+| `/api/agent/config/llm-models/raw` | PUT | Save raw YAML content |
+
+### LLM Model Configuration API (memOS)
+
+The dashboard can access memOS LLM model configurations for pipeline tuning:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/config/llm-models` | GET | Get current LLM model config |
+| `/api/v1/config/llm-models` | PUT | Update a model assignment |
+| `/api/v1/config/llm-models/reload` | POST | Reload config from YAML |
+| `/api/v1/config/llm-models/save` | POST | Save config to YAML |
+| `/api/v1/config/llm-models/presets` | GET | List available presets |
+| `/api/v1/config/llm-models/presets/{name}` | POST | Apply a preset |
+| `/api/v1/config/llm-models/raw` | GET | Get raw YAML content |
+
+**Config File Location**: `/home/sparkone/sdd/Recovery_Bot/memOS/server/config/llm_models.yaml`
+
+**Presets Available**:
+- `speed` - Fastest models (ministral-3:3b, gemma3:4b)
+- `quality` - Best models (qwen3:14b, deepseek-r1:14b)
+- `balanced` - Production default (qwen3:8b + ministral-3:3b)
+- `low_vram` - Minimal VRAM (all gemma3:4b)
 
 ## Services Monitored
 
@@ -113,9 +143,18 @@ unified_dashboard/
 │   │   ├── logs/        # Log viewer
 │   │   ├── docs/        # Documentation browser
 │   │   ├── processes/   # Process list
+│   │   ├── agent/       # Agent console & config
+│   │   │   ├── AgentConsole.tsx
+│   │   │   └── config/  # LLM config panel
+│   │   │       ├── AgentConfigPanel.tsx
+│   │   │       ├── PresetSelector.tsx
+│   │   │       ├── PipelineStageCard.tsx
+│   │   │       └── RawYamlEditor.tsx
 │   │   └── tabs/        # Main tab views
 │   ├── hooks/           # Custom React hooks
 │   ├── stores/          # Zustand stores
+│   │   ├── dashboardStore.ts
+│   │   └── agentConfigStore.ts
 │   └── lib/             # Utilities, API client
 ├── server/
 │   ├── routes/          # Express routes
@@ -123,7 +162,8 @@ unified_dashboard/
 │   │   ├── gpu.ts       # GPU status proxy
 │   │   ├── logs.ts      # Log collection
 │   │   ├── docs.ts      # Documentation server
-│   │   └── processes.ts # Process monitoring
+│   │   ├── processes.ts # Process monitoring
+│   │   └── agent.ts     # Agent API + config proxy
 │   └── index.ts         # Express entry point
 └── public/              # Static assets
 ```
@@ -161,6 +201,34 @@ This project is indexed by the ecosystem-wide MCP code intelligence layer.
 | **File tree** | `kit file-tree /home/sparkone/sdd/unified_dashboard` | View structure |
 | **Re-index** | `/home/sparkone/sdd/mcp_infrastructure/scripts/index_ecosystem.sh` | Refresh after major changes |
 
+## Agent Configuration Panel
+
+The Agent Console tab includes a live configuration panel for managing memOS LLM model assignments.
+
+### Features
+
+- **Preset Switching**: Apply speed/quality/balanced/low_vram presets with one click
+- **Pipeline Configuration**: Configure 9 pipeline stages (analyzer, planner, synthesizer, verifier, etc.)
+- **Utility Models**: Configure 27 utility models grouped by category (Reasoning, Retrieval, Analysis, Knowledge)
+- **Raw YAML Editor**: Direct editing of `llm_models.yaml` with syntax validation
+- **Live Updates**: Changes save immediately with optimistic UI updates
+
+### Usage
+
+1. Open the dashboard at http://localhost:3100
+2. Navigate to the **Agent Console** tab
+3. Click **"Configure Pipeline"** to expand the configuration panel
+4. Use tabs to switch between Pipeline, Utility, and Raw YAML views
+5. Changes are saved immediately; use "Save to YAML" to persist to disk
+
+### State Management
+
+The configuration panel uses a dedicated Zustand store (`agentConfigStore.ts`) with:
+- Optimistic updates for responsive UI
+- Debounced saves to prevent excessive API calls
+- Pending change tracking with visual indicators
+- Error recovery with rollback support
+
 ---
 
-*Last Updated: 2026-01-07 | Added ecosystem orchestration and CLI documentation*
+*Last Updated: 2026-01-11 | Added agentic configuration panel for live LLM model management*

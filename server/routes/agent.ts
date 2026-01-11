@@ -388,3 +388,195 @@ agentRouter.get('/observability/:requestId', async (req: Request, res: Response)
     })
   }
 })
+
+// ============================================================================
+// LLM Model Configuration API - Proxies to memOS config endpoints
+// ============================================================================
+
+// GET /api/agent/config/llm-models - Get full LLM config
+agentRouter.get('/config/llm-models', async (req: Request, res: Response) => {
+  try {
+    const response = await fetch(`${MEMOS_BASE_URL}/api/v1/config/llm-models`, {
+      signal: AbortSignal.timeout(5000),
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      res.json(data)
+    } else {
+      res.status(response.status).json({
+        error: `memOS returned ${response.status}: ${response.statusText}`,
+      })
+    }
+  } catch (err) {
+    const error = err as Error
+    res.status(503).json({ error: `memOS not available: ${error.message}` })
+  }
+})
+
+// PUT /api/agent/config/llm-models - Update a single model assignment
+agentRouter.put('/config/llm-models', async (req: Request, res: Response) => {
+  try {
+    const response = await fetch(`${MEMOS_BASE_URL}/api/v1/config/llm-models`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+      signal: AbortSignal.timeout(5000),
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      res.json(data)
+    } else {
+      const errorText = await response.text()
+      res.status(response.status).json({
+        error: `memOS returned ${response.status}: ${errorText}`,
+      })
+    }
+  } catch (err) {
+    const error = err as Error
+    res.status(503).json({ error: `memOS not available: ${error.message}` })
+  }
+})
+
+// POST /api/agent/config/llm-models/reload - Reload config from YAML file
+agentRouter.post('/config/llm-models/reload', async (req: Request, res: Response) => {
+  try {
+    const response = await fetch(`${MEMOS_BASE_URL}/api/v1/config/llm-models/reload`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(5000),
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      res.json(data)
+    } else {
+      res.status(response.status).json({
+        error: `memOS returned ${response.status}: ${response.statusText}`,
+      })
+    }
+  } catch (err) {
+    const error = err as Error
+    res.status(503).json({ error: `memOS not available: ${error.message}` })
+  }
+})
+
+// POST /api/agent/config/llm-models/save - Save current config to YAML file
+agentRouter.post('/config/llm-models/save', async (req: Request, res: Response) => {
+  try {
+    const response = await fetch(`${MEMOS_BASE_URL}/api/v1/config/llm-models/save`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(5000),
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      res.json(data)
+    } else {
+      res.status(response.status).json({
+        error: `memOS returned ${response.status}: ${response.statusText}`,
+      })
+    }
+  } catch (err) {
+    const error = err as Error
+    res.status(503).json({ error: `memOS not available: ${error.message}` })
+  }
+})
+
+// GET /api/agent/config/llm-models/presets - List available presets
+agentRouter.get('/config/llm-models/presets', async (req: Request, res: Response) => {
+  try {
+    const response = await fetch(`${MEMOS_BASE_URL}/api/v1/config/llm-models/presets`, {
+      signal: AbortSignal.timeout(5000),
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      res.json(data)
+    } else {
+      res.status(response.status).json({
+        error: `memOS returned ${response.status}: ${response.statusText}`,
+      })
+    }
+  } catch (err) {
+    const error = err as Error
+    res.status(503).json({ error: `memOS not available: ${error.message}` })
+  }
+})
+
+// POST /api/agent/config/llm-models/presets/:name - Apply a preset
+agentRouter.post('/config/llm-models/presets/:name', async (req: Request, res: Response) => {
+  const { name } = req.params
+
+  try {
+    const response = await fetch(`${MEMOS_BASE_URL}/api/v1/config/llm-models/presets/${name}`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(5000),
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      res.json(data)
+    } else {
+      const errorText = await response.text()
+      res.status(response.status).json({
+        error: `memOS returned ${response.status}: ${errorText}`,
+      })
+    }
+  } catch (err) {
+    const error = err as Error
+    res.status(503).json({ error: `memOS not available: ${error.message}` })
+  }
+})
+
+// GET /api/agent/config/llm-models/raw - Get raw YAML content
+agentRouter.get('/config/llm-models/raw', async (req: Request, res: Response) => {
+  try {
+    const response = await fetch(`${MEMOS_BASE_URL}/api/v1/config/llm-models/raw`, {
+      signal: AbortSignal.timeout(5000),
+    })
+
+    if (response.ok) {
+      const yamlContent = await response.text()
+      res.type('text/yaml').send(yamlContent)
+    } else {
+      res.status(response.status).json({
+        error: `memOS returned ${response.status}: ${response.statusText}`,
+      })
+    }
+  } catch (err) {
+    const error = err as Error
+    res.status(503).json({ error: `memOS not available: ${error.message}` })
+  }
+})
+
+// PUT /api/agent/config/llm-models/raw - Save raw YAML content
+agentRouter.put('/config/llm-models/raw', async (req: Request, res: Response) => {
+  try {
+    const yamlContent = typeof req.body === 'string' ? req.body : req.body.yaml
+
+    if (!yamlContent) {
+      return res.status(400).json({ error: 'YAML content required in body' })
+    }
+
+    const response = await fetch(`${MEMOS_BASE_URL}/api/v1/config/llm-models/raw`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'text/yaml' },
+      body: yamlContent,
+      signal: AbortSignal.timeout(5000),
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      res.json(data)
+    } else {
+      const errorText = await response.text()
+      res.status(response.status).json({
+        error: `memOS returned ${response.status}: ${errorText}`,
+      })
+    }
+  } catch (err) {
+    const error = err as Error
+    res.status(503).json({ error: `memOS not available: ${error.message}` })
+  }
+})

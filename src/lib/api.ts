@@ -148,7 +148,9 @@ export async function fetchLLMConfig(): Promise<LLMConfig> {
     const error = await res.json().catch(() => ({ error: 'Failed to fetch LLM config' }))
     throw new Error(error.error || 'Failed to fetch LLM config')
   }
-  return res.json()
+  const json = await res.json()
+  // memOS wraps response in {success, data}
+  return json.data || json
 }
 
 // Update a single model assignment
@@ -199,7 +201,17 @@ export async function fetchLLMPresets(): Promise<{ presets: string[]; details: R
     const error = await res.json().catch(() => ({ error: 'Failed to fetch presets' }))
     throw new Error(error.error || 'Failed to fetch presets')
   }
-  return res.json()
+  const json = await res.json()
+  // memOS returns {success, data: {presets: [...], details: {...}}}
+  const data = json.data || json
+  // Handle case where presets is just an array of strings
+  if (Array.isArray(data.presets)) {
+    return { presets: data.presets, details: data.details || {} }
+  }
+  if (Array.isArray(data)) {
+    return { presets: data, details: {} }
+  }
+  return { presets: [], details: {} }
 }
 
 // Apply a preset
@@ -219,6 +231,12 @@ export async function fetchRawYaml(): Promise<string> {
   const res = await fetch(`${API_BASE}/agent/config/llm-models/raw`)
   if (!res.ok) {
     throw new Error('Failed to fetch raw YAML')
+  }
+  const contentType = res.headers.get('content-type') || ''
+  if (contentType.includes('application/json')) {
+    // memOS wraps in {success, data: {content: "..."}}
+    const json = await res.json()
+    return json.data?.content || json.content || ''
   }
   return res.text()
 }

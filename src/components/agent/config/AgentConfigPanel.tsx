@@ -17,17 +17,17 @@ import { PipelineStageCard } from './PipelineStageCard'
 import { RawYamlEditor } from './RawYamlEditor'
 import type { ModelConfig } from '@/lib/api'
 
-// Pipeline stage order for consistent display
+// Pipeline stage order - matches actual memOS execution order
 const PIPELINE_ORDER = [
   'analyzer',
-  'planner',
-  'synthesizer',
-  'verifier',
-  'thinking',
   'url_evaluator',
   'coverage_evaluator',
+  'planner',
+  'synthesizer',
+  'thinking',
   'retrieval_evaluator',
   'self_reflection',
+  'verifier',
 ]
 
 // Utility task groupings
@@ -66,6 +66,9 @@ const UTILITY_GROUPS: Record<string, string[]> = {
     'entity_grounder',
     'adaptive_refinement',
     'information_gain',
+  ],
+  Dynamic: [
+    'actor_factory',
   ],
 }
 

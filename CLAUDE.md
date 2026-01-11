@@ -208,8 +208,22 @@ The Agent Console tab includes a live configuration panel for managing memOS LLM
 ### Features
 
 - **Preset Switching**: Apply speed/quality/balanced/low_vram presets with one click
-- **Pipeline Configuration**: Configure 9 pipeline stages (analyzer, planner, synthesizer, verifier, etc.)
-- **Utility Models**: Configure 27 utility models grouped by category (Reasoning, Retrieval, Analysis, Knowledge)
+- **Pipeline Configuration**: Configure 9 pipeline stages in execution order:
+  - `analyzer` - Query analysis and classification
+  - `url_evaluator` - LLM-based URL relevance filtering before scraping
+  - `coverage_evaluator` - Content coverage assessment
+  - `planner` - Multi-phase search planning
+  - `synthesizer` - Final response synthesis
+  - `thinking` - Extended reasoning for complex queries
+  - `retrieval_evaluator` - CRAG document relevance scoring
+  - `self_reflection` - Post-synthesis quality check
+  - `verifier` - Fact checking against sources
+- **Utility Models**: Configure 28 utility models grouped by category:
+  - **Reasoning** (4): reasoning_composer, reasoning_dag, enhanced_planner, enhanced_reflector
+  - **Retrieval** (8): cross_encoder, hyde_generator, flare_detector, information_bottleneck, sufficient_context, self_consistency, speculative_verifier, ragas_judge
+  - **Analysis** (6): entity_extractor, query_decomposer, relevance_scorer, uncertainty_detector, entropy_monitor, scraper_analyzer
+  - **Knowledge** (9): experience_distiller, prompt_compressor, raptor_summarizer, graph_extractor, graph_summarizer, cross_domain_validator, entity_grounder, adaptive_refinement, information_gain
+  - **Dynamic** (1): actor_factory (AIME-style dynamic agent assembly)
 - **Raw YAML Editor**: Direct editing of `llm_models.yaml` with syntax validation
 - **Live Updates**: Changes save immediately with optimistic UI updates
 
@@ -231,4 +245,4 @@ The configuration panel uses a dedicated Zustand store (`agentConfigStore.ts`) w
 
 ---
 
-*Last Updated: 2026-01-11 | Added agentic configuration panel for live LLM model management*
+*Last Updated: 2026-01-11 | Synced pipeline order with memOS execution flow, added actor_factory utility model*

@@ -29,6 +29,7 @@ MEMOS_SERVER="$ECOSYSTEM_ROOT/Recovery_Bot/memOS/server"
 PDF_TOOLS="$ECOSYSTEM_ROOT/PDF_Extraction_Tools"
 HRM_MODEL="$ECOSYSTEM_ROOT/HRM_Model"
 RECOVERY_BOT="$ECOSYSTEM_ROOT/Recovery_Bot"
+GATEWAY="$ECOSYSTEM_ROOT/Recovery_Bot/gateway"
 
 # Log file
 LOG_FILE="$SCRIPT_DIR/ecosystem.log"
@@ -54,6 +55,7 @@ SERVICES=(
     ["memos"]="8001:/api/v1/health:memos:python"
     ["pdf-tools"]="8002:/health:pdf-tools:python"
     ["docling"]="8003:/:docling:docker"
+    ["gateway"]="8100:/health:gateway:python"
     ["dashboard"]="3100:/:dashboard:node"
 )
 
@@ -67,6 +69,7 @@ SERVICE_ORDER=(
     "docling"
     "pdf-tools"
     "memos"
+    "gateway"
     "dashboard"
 )
 
@@ -536,6 +539,70 @@ stop_memos() {
     fi
 }
 
+start_gateway() {
+    log_subheader "LLM Gateway (port 8100)"
+    if curl -s "http://localhost:8100/health" >/dev/null 2>&1; then
+        log_success "Gateway is already running"
+        return 0
+    fi
+
+    # Check if port is available
+    if ! check_port_available 8100 "Gateway"; then
+        log_error "Cannot start Gateway - port 8100 in use"
+        return 1
+    fi
+
+    # Check if directory and script exist
+    if [ ! -d "$GATEWAY" ]; then
+        log_error "Gateway directory not found: $GATEWAY"
+        return 1
+    fi
+
+    if [ ! -x "$GATEWAY/scripts/start.sh" ]; then
+        log_error "Gateway start script not found: $GATEWAY/scripts/start.sh"
+        return 1
+    fi
+
+    log_info "Starting LLM Gateway..."
+    cd "$GATEWAY"
+
+    # Create startup log
+    local gateway_log="$GATEWAY/startup.log"
+    echo "=== Gateway startup at $(date) ===" > "$gateway_log"
+
+    ./scripts/start.sh >> "$gateway_log" 2>&1 &
+    local pid=$!
+    log_info "Started Gateway launcher (PID: $pid)"
+
+    if wait_for_service "gateway" 8100 "/health" 30; then
+        log_success "LLM Gateway started"
+    else
+        log_error "Gateway failed to start"
+        show_startup_error "$gateway_log" "Gateway" 20
+        return 1
+    fi
+}
+
+stop_gateway() {
+    log_subheader "LLM Gateway"
+    if [ -x "$GATEWAY/scripts/stop.sh" ]; then
+        cd "$GATEWAY"
+        ./scripts/stop.sh
+        log_success "Gateway stopped"
+    else
+        # Fallback: kill process on port 8100
+        local pids=$(lsof -i:8100 -t 2>/dev/null)
+        if [ -n "$pids" ]; then
+            log_info "Stopping Gateway processes..."
+            echo "$pids" | xargs kill -TERM 2>/dev/null || true
+            sleep 2
+            log_success "Gateway stopped"
+        else
+            log_warning "Gateway is not running"
+        fi
+    fi
+}
+
 start_dashboard() {
     log_subheader "Unified Dashboard (port 3100/3101)"
     # Use localhost to handle both IPv4 and IPv6 binding
@@ -685,6 +752,7 @@ cmd_start() {
             docling) start_docling || ((failed++)) ;;
             pdf-tools) start_pdf_tools || ((failed++)) ;;
             memos) start_memos || ((failed++)) ;;
+            gateway) start_gateway || ((failed++)) ;;
             dashboard) start_dashboard || ((failed++)) ;;
         esac
         echo ""
@@ -713,6 +781,7 @@ cmd_stop() {
     for service in "${reversed[@]}"; do
         case "$service" in
             dashboard) stop_dashboard ;;
+            gateway) stop_gateway ;;
             memos) stop_memos ;;
             pdf-tools) stop_pdf_tools ;;
             docling) stop_docling ;;
@@ -797,6 +866,13 @@ cmd_status() {
         printf "%-15s %-8s ${GREEN}%-10s${NC} %s\n" "memos" "8001" "running" "agentic search"
     else
         printf "%-15s %-8s ${RED}%-10s${NC} %s\n" "memos" "8001" "stopped" ""
+    fi
+
+    # Gateway
+    if curl -s "http://localhost:8100/health" >/dev/null 2>&1; then
+        printf "%-15s %-8s ${GREEN}%-10s${NC} %s\n" "gateway" "8100" "running" "LLM routing"
+    else
+        printf "%-15s %-8s ${RED}%-10s${NC} %s\n" "gateway" "8100" "stopped" ""
     fi
 
     # Dashboard (check both frontend and backend)
@@ -945,6 +1021,17 @@ cmd_health() {
     fi
     echo ""
 
+    # Gateway
+    echo -e "${BOLD}Gateway (8100):${NC}"
+    if curl -s "http://localhost:8100/health" >/dev/null 2>&1; then
+        log_success "Gateway healthy"
+        passed=$((passed + 1))
+    else
+        log_warning "Gateway not responding (optional service)"
+        warnings=$((warnings + 1))
+    fi
+    echo ""
+
     # Dashboard (check both frontend and backend)
     echo -e "${BOLD}Dashboard (3100/3101):${NC}"
     local dash_fe_ok=false
@@ -994,6 +1081,7 @@ cmd_logs() {
         echo ""
         echo "Available services:"
         echo "  dashboard  - Unified Dashboard logs"
+        echo "  gateway    - LLM Gateway logs"
         echo "  memos      - memOS server logs"
         echo "  pdf-tools  - PDF Extraction Tools logs"
         echo "  ollama     - Ollama LLM logs"
@@ -1007,6 +1095,9 @@ cmd_logs() {
     case "$service" in
         dashboard)
             tail -f "$UNIFIED_DASHBOARD/dashboard.log" 2>/dev/null || log_error "No dashboard logs found"
+            ;;
+        gateway)
+            tail -f "$GATEWAY/startup.log" 2>/dev/null || log_error "No gateway logs found"
             ;;
         memos)
             cd "$MEMOS_SERVER" && ./logs_server.sh
@@ -1045,7 +1136,7 @@ cmd_diagnose() {
     printf "%-10s %-8s %-20s\n" "PORT" "STATUS" "PROCESS"
     printf "%-10s %-8s %-20s\n" "────────" "──────" "────────────────────"
 
-    for port in 3100 3101 8001 8002 8003 8888 5432 6379 11434; do
+    for port in 3100 3101 8001 8002 8003 8100 8888 5432 6379 11434; do
         if port_in_use $port; then
             local proc=$(get_port_user $port)
             printf "%-10s ${GREEN}%-8s${NC} %s\n" "$port" "in use" "$proc"
@@ -1110,11 +1201,13 @@ cmd_help() {
     echo "  docling    - Document processor (port 8003)"
     echo "  pdf-tools  - PDF Extraction API (port 8002)"
     echo "  memos      - memOS agentic search (port 8001)"
+    echo "  gateway    - LLM Gateway routing (port 8100)"
     echo "  dashboard  - Unified Dashboard UI (port 3100)"
     echo ""
     echo "Individual Service Scripts:"
     echo "  PDF Tools:  $PDF_TOOLS/api_server.sh"
     echo "  memOS:      $MEMOS_SERVER/start_server.sh"
+    echo "  Gateway:    $GATEWAY/scripts/start.sh"
     echo "  Dashboard:  $UNIFIED_DASHBOARD/start.sh"
     echo ""
     echo "Examples:"

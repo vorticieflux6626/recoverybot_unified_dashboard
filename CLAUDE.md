@@ -1,6 +1,6 @@
 # Unified System Dashboard
 
-> **Created**: 2026-01-03 | **Updated**: 2026-01-11 | **Port**: 3100 | **Version**: 0.3.0
+> **Created**: 2026-01-03 | **Updated**: 2026-01-12 | **Port**: 3100 | **Version**: 0.3.1
 
 ## Quick Reference
 
@@ -43,12 +43,13 @@ See `ECOSYSTEM_CLI_GUIDE.txt` for comprehensive command-line documentation.
 
 ### Dependent Services
 
-| Service | Location | Management Script |
-|---------|----------|-------------------|
-| memOS | `Recovery_Bot/memOS/server/` | `./start_server.sh` |
-| PDF Tools | `PDF_Extraction_Tools/` | `./api_server.sh` |
-| Ollama | System service | `scripts/ollama.sh` |
-| Docker containers | Docker | `scripts/docker-services.sh` |
+| Service | Location | Port | Management Script |
+|---------|----------|------|-------------------|
+| memOS | `Recovery_Bot/memOS/server/` | 8001 | `./start_server.sh` |
+| Gateway | `Recovery_Bot/gateway/` | 8100 | `./scripts/start.sh` |
+| PDF Tools | `PDF_Extraction_Tools/` | 8002 | `./api_server.sh` |
+| Ollama | System service | 11434 | `scripts/ollama.sh` |
+| Docker containers | Docker | - | `scripts/docker-services.sh` |
 
 ## Architecture
 
@@ -245,4 +246,4 @@ The configuration panel uses a dedicated Zustand store (`agentConfigStore.ts`) w
 
 ---
 
-*Last Updated: 2026-01-11 | Synced pipeline order with memOS execution flow, added actor_factory utility model*
+*Last Updated: 2026-01-12 | Added LLM Gateway (port 8100) to ecosystem orchestration*

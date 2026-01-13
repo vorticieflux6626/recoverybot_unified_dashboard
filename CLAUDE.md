@@ -1,6 +1,6 @@
 # Unified System Dashboard
 
-> **Created**: 2026-01-03 | **Updated**: 2026-01-12 | **Port**: 3100 | **Version**: 0.3.1
+> **Created**: 2026-01-03 | **Updated**: 2026-01-13 | **Port**: 3100 | **Version**: 0.3.2
 
 ## Quick Reference
 
@@ -196,11 +196,38 @@ This project is indexed by the ecosystem-wide MCP code intelligence layer.
 
 **Infrastructure**: `/home/sparkone/sdd/mcp_infrastructure/`
 
+### Search Commands
+
+```bash
+# Activate venv first (required)
+source /home/sparkone/sdd/mcp_infrastructure/venv/bin/activate
+
+# Search this project
+kit search /home/sparkone/sdd/unified_dashboard "ecosystem"
+
+# Search all ecosystem projects
+kit search /home/sparkone/sdd/Recovery_Bot/memOS "VRAM"
+kit search /home/sparkone/sdd/PDF_Extraction_Tools "graph"
+```
+
+### Management Commands
+
 | Tool | Command | Purpose |
 |------|---------|---------|
-| **Search code** | `kit search /home/sparkone/sdd/unified_dashboard "query"` | Find code patterns |
-| **File tree** | `kit file-tree /home/sparkone/sdd/unified_dashboard` | View structure |
-| **Re-index** | `/home/sparkone/sdd/mcp_infrastructure/scripts/index_ecosystem.sh` | Refresh after major changes |
+| **Search code** | `kit search /path "query"` | Find code patterns |
+| **File tree** | `kit file-tree /path` | View structure |
+| **Re-index all** | `/home/sparkone/sdd/mcp_infrastructure/scripts/index_ecosystem.sh` | Refresh all 8 projects |
+| **Index single** | `/home/sparkone/sdd/mcp_infrastructure/scripts/index_project.sh /path` | Refresh one project |
+
+### Embeddings via Gateway
+
+The code intelligence layer routes embeddings through Gateway for VRAM management:
+
+```bash
+curl -X POST http://localhost:8100/api/embed \
+  -H "Content-Type: application/json" \
+  -d '{"model":"nomic-embed-text","input":"your query"}'
+```
 
 ## Agent Configuration Panel
 

@@ -30,6 +30,7 @@ PDF_TOOLS="$ECOSYSTEM_ROOT/PDF_Extraction_Tools"
 HRM_MODEL="$ECOSYSTEM_ROOT/HRM_Model"
 RECOVERY_BOT="$ECOSYSTEM_ROOT/Recovery_Bot"
 GATEWAY="$ECOSYSTEM_ROOT/Recovery_Bot/gateway"
+MCP_NODE_EDITOR="$ECOSYSTEM_ROOT/MCP_Node_Editor"
 
 # Log file
 LOG_FILE="$SCRIPT_DIR/ecosystem.log"
@@ -56,6 +57,7 @@ SERVICES=(
     ["pdf-tools"]="8002:/health:pdf-tools:python"
     ["docling"]="8003:/:docling:docker"
     ["gateway"]="8100:/health:gateway:python"
+    ["node-editor"]="7777:/api/status:node-editor:python"
     ["dashboard"]="3100:/:dashboard:node"
 )
 
@@ -70,6 +72,7 @@ SERVICE_ORDER=(
     "pdf-tools"
     "memos"
     "gateway"
+    "node-editor"
     "dashboard"
 )
 
@@ -603,6 +606,71 @@ stop_gateway() {
     fi
 }
 
+start_node_editor() {
+    log_subheader "MCP Node Editor (ports 7777/8081/8082)"
+    if curl -s "http://localhost:7777/api/status" >/dev/null 2>&1; then
+        log_success "Node Editor is already running"
+        return 0
+    fi
+
+    # Check if port is available
+    if ! check_port_available 7777 "Node Editor"; then
+        log_error "Cannot start Node Editor - port 7777 in use"
+        return 1
+    fi
+
+    # Check if directory and script exist
+    if [ ! -d "$MCP_NODE_EDITOR" ]; then
+        log_error "Node Editor directory not found: $MCP_NODE_EDITOR"
+        return 1
+    fi
+
+    if [ ! -x "$MCP_NODE_EDITOR/start-app.sh" ]; then
+        log_error "Node Editor start script not found: $MCP_NODE_EDITOR/start-app.sh"
+        return 1
+    fi
+
+    log_info "Starting MCP Node Editor..."
+    cd "$MCP_NODE_EDITOR"
+
+    # Create startup log
+    local editor_log="$MCP_NODE_EDITOR/logs/startup.log"
+    mkdir -p "$MCP_NODE_EDITOR/logs"
+    echo "=== Node Editor startup at $(date) ===" > "$editor_log"
+
+    ./start-app.sh >> "$editor_log" 2>&1 &
+    local pid=$!
+    log_info "Started Node Editor launcher (PID: $pid)"
+
+    if wait_for_service "node-editor" 7777 "/api/status" 60; then
+        log_success "MCP Node Editor started"
+    else
+        log_error "Node Editor failed to start"
+        show_startup_error "$editor_log" "Node Editor" 20
+        return 1
+    fi
+}
+
+stop_node_editor() {
+    log_subheader "MCP Node Editor"
+    if [ -x "$MCP_NODE_EDITOR/stop-app.sh" ]; then
+        cd "$MCP_NODE_EDITOR"
+        ./stop-app.sh
+        log_success "Node Editor stopped"
+    else
+        # Fallback: kill processes on ports 7777, 8081, 8082
+        local pids=$(lsof -i:7777 -i:8081 -i:8082 -t 2>/dev/null)
+        if [ -n "$pids" ]; then
+            log_info "Stopping Node Editor processes..."
+            echo "$pids" | xargs kill -TERM 2>/dev/null || true
+            sleep 2
+            log_success "Node Editor stopped"
+        else
+            log_warning "Node Editor is not running"
+        fi
+    fi
+}
+
 start_dashboard() {
     log_subheader "Unified Dashboard (port 3100/3101)"
     # Use localhost to handle both IPv4 and IPv6 binding
@@ -753,6 +821,7 @@ cmd_start() {
             pdf-tools) start_pdf_tools || ((failed++)) ;;
             memos) start_memos || ((failed++)) ;;
             gateway) start_gateway || ((failed++)) ;;
+            node-editor) start_node_editor || ((failed++)) ;;
             dashboard) start_dashboard || ((failed++)) ;;
         esac
         echo ""
@@ -781,6 +850,7 @@ cmd_stop() {
     for service in "${reversed[@]}"; do
         case "$service" in
             dashboard) stop_dashboard ;;
+            node-editor) stop_node_editor ;;
             gateway) stop_gateway ;;
             memos) stop_memos ;;
             pdf-tools) stop_pdf_tools ;;
@@ -873,6 +943,13 @@ cmd_status() {
         printf "%-15s %-8s ${GREEN}%-10s${NC} %s\n" "gateway" "8100" "running" "LLM routing"
     else
         printf "%-15s %-8s ${RED}%-10s${NC} %s\n" "gateway" "8100" "stopped" ""
+    fi
+
+    # Node Editor
+    if curl -s "http://localhost:7777/api/status" >/dev/null 2>&1; then
+        printf "%-15s %-8s ${GREEN}%-10s${NC} %s\n" "node-editor" "7777" "running" "pipeline editor"
+    else
+        printf "%-15s %-8s ${RED}%-10s${NC} %s\n" "node-editor" "7777" "stopped" ""
     fi
 
     # Dashboard (check both frontend and backend)
@@ -1032,6 +1109,19 @@ cmd_health() {
     fi
     echo ""
 
+    # Node Editor
+    echo -e "${BOLD}Node Editor (7777):${NC}"
+    local editor_status=$(curl -s "http://localhost:7777/api/status" 2>/dev/null)
+    if [ -n "$editor_status" ]; then
+        echo "$editor_status" | jq -r '"  Status: \(.status // "unknown")"' 2>/dev/null || echo "  Status: running"
+        log_success "Node Editor healthy"
+        passed=$((passed + 1))
+    else
+        log_warning "Node Editor not responding (optional service)"
+        warnings=$((warnings + 1))
+    fi
+    echo ""
+
     # Dashboard (check both frontend and backend)
     echo -e "${BOLD}Dashboard (3100/3101):${NC}"
     local dash_fe_ok=false
@@ -1089,6 +1179,7 @@ cmd_logs() {
         echo "  redis      - Redis logs"
         echo "  searxng    - SearXNG logs"
         echo "  docling    - Docling processor logs"
+        echo "  node-editor - MCP Node Editor logs"
         return 1
     fi
 
@@ -1120,6 +1211,11 @@ cmd_logs() {
         docling)
             docker logs -f memos-docling
             ;;
+        node-editor)
+            tail -f "$MCP_NODE_EDITOR/logs/pipeline_launcher.log" 2>/dev/null || \
+            tail -f "$MCP_NODE_EDITOR/logs/startup.log" 2>/dev/null || \
+            log_error "No node editor logs found"
+            ;;
         *)
             log_error "Unknown service: $service"
             return 1
@@ -1136,7 +1232,7 @@ cmd_diagnose() {
     printf "%-10s %-8s %-20s\n" "PORT" "STATUS" "PROCESS"
     printf "%-10s %-8s %-20s\n" "────────" "──────" "────────────────────"
 
-    for port in 3100 3101 8001 8002 8003 8100 8888 5432 6379 11434; do
+    for port in 3100 3101 7777 8001 8002 8003 8081 8082 8100 8888 5432 6379 11434; do
         if port_in_use $port; then
             local proc=$(get_port_user $port)
             printf "%-10s ${GREEN}%-8s${NC} %s\n" "$port" "in use" "$proc"
@@ -1202,13 +1298,15 @@ cmd_help() {
     echo "  pdf-tools  - PDF Extraction API (port 8002)"
     echo "  memos      - memOS agentic search (port 8001)"
     echo "  gateway    - LLM Gateway routing (port 8100)"
+    echo "  node-editor - MCP Pipeline Editor (port 7777)"
     echo "  dashboard  - Unified Dashboard UI (port 3100)"
     echo ""
     echo "Individual Service Scripts:"
-    echo "  PDF Tools:  $PDF_TOOLS/api_server.sh"
-    echo "  memOS:      $MEMOS_SERVER/start_server.sh"
-    echo "  Gateway:    $GATEWAY/scripts/start.sh"
-    echo "  Dashboard:  $UNIFIED_DASHBOARD/start.sh"
+    echo "  PDF Tools:   $PDF_TOOLS/api_server.sh"
+    echo "  memOS:       $MEMOS_SERVER/start_server.sh"
+    echo "  Gateway:     $GATEWAY/scripts/start.sh"
+    echo "  Node Editor: $MCP_NODE_EDITOR/start-app.sh"
+    echo "  Dashboard:   $UNIFIED_DASHBOARD/start.sh"
     echo ""
     echo "Examples:"
     echo "  $0 start              # Start all services in dependency order"

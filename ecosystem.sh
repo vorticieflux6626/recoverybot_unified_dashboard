@@ -31,6 +31,7 @@ HRM_MODEL="$ECOSYSTEM_ROOT/HRM_Model"
 RECOVERY_BOT="$ECOSYSTEM_ROOT/Recovery_Bot"
 GATEWAY="$ECOSYSTEM_ROOT/Recovery_Bot/gateway"
 MCP_NODE_EDITOR="$ECOSYSTEM_ROOT/MCP_Node_Editor"
+MCP_INFRA="$ECOSYSTEM_ROOT/mcp_infrastructure"
 
 # Log file
 LOG_FILE="$SCRIPT_DIR/ecosystem.log"
@@ -52,6 +53,7 @@ SERVICES=(
     ["ollama"]="11434:/api/version:ollama:systemctl"
     ["postgres"]="5432:pg_isready:postgres:docker"
     ["redis"]="6379:redis-ping:redis:docker"
+    ["milvus"]="9091:/healthz:milvus:docker"
     ["searxng"]="8888:/healthz:searxng:docker"
     ["memos"]="8001:/api/v1/health:memos:python"
     ["pdf-tools"]="8002:/health:pdf-tools:python"
@@ -67,6 +69,7 @@ SERVICE_ORDER=(
     "ollama"
     "postgres"
     "redis"
+    "milvus"
     "searxng"
     "docling"
     "pdf-tools"
@@ -339,6 +342,46 @@ stop_redis() {
         log_success "Redis stopped"
     else
         log_warning "Redis container not running"
+    fi
+}
+
+start_milvus() {
+    log_subheader "Milvus Vector Database (port 19530/9091)"
+
+    # Check if containers are already running
+    if docker ps --format '{{.Names}}' | grep -q "milvus-standalone"; then
+        log_success "Milvus is already running"
+        return 0
+    fi
+
+    # Check if mcp_infrastructure has docker-compose.yml
+    if [ ! -f "$MCP_INFRA/docker-compose.yml" ]; then
+        log_warning "Milvus compose file not found: $MCP_INFRA/docker-compose.yml"
+        return 1
+    fi
+
+    log_info "Starting Milvus containers..."
+    cd "$MCP_INFRA"
+    docker compose up -d 2>/dev/null || docker-compose up -d 2>/dev/null
+
+    if wait_for_service "milvus" 9091 "/healthz" 60; then
+        log_success "Milvus started"
+    else
+        log_error "Milvus failed to start"
+        return 1
+    fi
+}
+
+stop_milvus() {
+    log_subheader "Milvus Vector Database"
+
+    if docker ps --format '{{.Names}}' | grep -q "milvus"; then
+        log_info "Stopping Milvus containers..."
+        cd "$MCP_INFRA"
+        docker compose down 2>/dev/null || docker-compose down 2>/dev/null
+        log_success "Milvus stopped"
+    else
+        log_warning "Milvus containers not running"
     fi
 }
 
@@ -816,6 +859,7 @@ cmd_start() {
             ollama) start_ollama || ((failed++)) ;;
             postgres) start_postgres || ((failed++)) ;;
             redis) start_redis || ((failed++)) ;;
+            milvus) start_milvus || ((failed++)) ;;
             searxng) start_searxng || ((failed++)) ;;
             docling) start_docling || ((failed++)) ;;
             pdf-tools) start_pdf_tools || ((failed++)) ;;
@@ -856,6 +900,7 @@ cmd_stop() {
             pdf-tools) stop_pdf_tools ;;
             docling) stop_docling ;;
             searxng) stop_searxng ;;
+            milvus) stop_milvus ;;
             redis) stop_redis ;;
             postgres) stop_postgres ;;
             ollama) stop_ollama ;;
@@ -907,6 +952,13 @@ cmd_status() {
         printf "%-15s %-8s ${GREEN}%-10s${NC} %s\n" "redis" "6379" "running" "memos-redis"
     else
         printf "%-15s %-8s ${RED}%-10s${NC} %s\n" "redis" "6379" "stopped" ""
+    fi
+
+    # Milvus
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "milvus-standalone"; then
+        printf "%-15s %-8s ${GREEN}%-10s${NC} %s\n" "milvus" "19530" "running" "vector db"
+    else
+        printf "%-15s %-8s ${RED}%-10s${NC} %s\n" "milvus" "19530" "stopped" ""
     fi
 
     # SearXNG
@@ -1061,6 +1113,17 @@ cmd_health() {
     fi
     echo ""
 
+    # Milvus
+    echo -e "${BOLD}Milvus (19530/9091):${NC}"
+    if curl -s "http://localhost:9091/healthz" | grep -q OK 2>/dev/null; then
+        log_success "Milvus healthy"
+        passed=$((passed + 1))
+    else
+        log_warning "Milvus not responding (optional for code indexing)"
+        warnings=$((warnings + 1))
+    fi
+    echo ""
+
     # SearXNG
     echo -e "${BOLD}SearXNG (8888):${NC}"
     if curl -s "http://localhost:8888/healthz" >/dev/null 2>&1; then
@@ -1178,6 +1241,7 @@ cmd_logs() {
         echo "  postgres   - PostgreSQL logs"
         echo "  redis      - Redis logs"
         echo "  searxng    - SearXNG logs"
+        echo "  milvus     - Milvus vector database logs"
         echo "  docling    - Docling processor logs"
         echo "  node-editor - MCP Node Editor logs"
         return 1
@@ -1208,6 +1272,9 @@ cmd_logs() {
         searxng)
             docker logs -f searxng
             ;;
+        milvus)
+            docker logs -f milvus-standalone
+            ;;
         docling)
             docker logs -f memos-docling
             ;;
@@ -1232,7 +1299,7 @@ cmd_diagnose() {
     printf "%-10s %-8s %-20s\n" "PORT" "STATUS" "PROCESS"
     printf "%-10s %-8s %-20s\n" "────────" "──────" "────────────────────"
 
-    for port in 3100 3101 7777 8001 8002 8003 8081 8082 8100 8888 5432 6379 11434; do
+    for port in 3100 3101 7777 8001 8002 8003 8081 8082 8100 8888 9091 19530 5432 6379 11434; do
         if port_in_use $port; then
             local proc=$(get_port_user $port)
             printf "%-10s ${GREEN}%-8s${NC} %s\n" "$port" "in use" "$proc"
@@ -1293,6 +1360,7 @@ cmd_help() {
     echo "  ollama     - LLM inference (port 11434)"
     echo "  postgres   - PostgreSQL with pgvector (port 5432)"
     echo "  redis      - Cache and session store (port 6379)"
+    echo "  milvus     - Milvus vector database (port 19530/9091)"
     echo "  searxng    - Metasearch engine (port 8888)"
     echo "  docling    - Document processor (port 8003)"
     echo "  pdf-tools  - PDF Extraction API (port 8002)"

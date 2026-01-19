@@ -14,15 +14,18 @@ gpuRouter.get('/status', async (req, res) => {
 
     const data = await response.json()
 
-    // Transform to dashboard format
+    // Transform to dashboard format - memOS returns nested structure
+    const gpuData = data.data || data
+    const gpu = gpuData.gpus?.[0] || {}
+
     const gpuStatus = {
-      name: data.gpu_name || 'Unknown GPU',
-      vramUsed: data.vram_used_gb || data.memory_used / 1024 || 0,
-      vramTotal: data.vram_total_gb || data.memory_total / 1024 || 24,
-      utilization: data.gpu_utilization || data.utilization || 0,
-      temperature: data.temperature || 0,
-      powerDraw: data.power_draw || data.power_usage || 0,
-      loadedModels: data.loaded_models || [],
+      name: gpu.name || gpuData.gpu_name || 'Unknown GPU',
+      vramUsed: gpuData.used_vram_gb || gpu.used_memory_gb || 0,
+      vramTotal: gpuData.total_vram_gb || gpu.total_memory_gb || 24,
+      utilization: gpu.utilization_percent || gpuData.gpu_utilization || 0,
+      temperature: gpu.temperature_c || gpuData.temperature || 0,
+      powerDraw: gpu.power_draw_w || gpuData.power_draw || 0,
+      loadedModels: gpuData.loaded_models || [],
     }
 
     res.json(gpuStatus)

@@ -95,7 +95,7 @@ export const HEALTH_CHECK_SERVICES: HealthCheckService[] = [
   { name: 'Neo4j', port: NEO4J_HTTP_PORT, healthEndpoint: '/', type: 'http' },
   { name: 'Milvus', port: MILVUS_HEALTH_PORT, healthEndpoint: '/healthz', type: 'http' },
   { name: 'MinIO', port: MINIO_PORT, healthEndpoint: '/minio/health/live', type: 'http' },
-  { name: 'etcd', port: ETCD_PORT, healthEndpoint: '/health', type: 'http' },
+  // Note: etcd is internal to Docker network (not exposed to host), health implied by Milvus
   { name: 'PostgreSQL', port: POSTGRES_PORT, healthEndpoint: '', type: 'tcp' },
   { name: 'Redis', port: REDIS_PORT, healthEndpoint: '', type: 'tcp' },
 ]

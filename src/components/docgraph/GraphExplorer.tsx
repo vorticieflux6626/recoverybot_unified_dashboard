@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import ForceGraph2D, { ForceGraphMethods } from 'react-force-graph-2d'
+import { forceCollide, forceRadial } from 'd3-force'
 import { fetchSampleGraph, fetchGraphData, fetchDocGraphProjects, type GraphNode, type GraphEdge } from '@/lib/api'
 import { Loader2, ZoomIn, ZoomOut, Maximize2, Code, Box, FileText, X, Info, ChevronDown, Keyboard, File } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -176,12 +177,35 @@ export function GraphExplorer({ initialNodeId, onSelectNode }: GraphExplorerProp
     // Calculate max degree for scaling (ensure it's at least 1)
     const maxDegree = Math.max(...nodes.map(n => n.degreeNum), 1)
 
+    // Build set of connected node IDs
+    const connectedIds = new Set<string>()
+    ;(graphData.edges || []).forEach(e => {
+      connectedIds.add(e.source)
+      connectedIds.add(e.target)
+    })
+
     return {
-      nodes: nodes.map(n => ({
-        ...n,
-        // Scale val between 10 and 30 based on relative degree - ensure minimum size for clickability
-        val: Math.max(10, 10 + (n.degreeNum / maxDegree) * 20),
-      })),
+      nodes: nodes.map((n, i) => {
+        // Provide initial positions in a radial layout
+        // This ensures all nodes have valid starting coordinates
+        const isIsolated = !connectedIds.has(n.id)
+        const angle = (2 * Math.PI * i) / nodes.length
+        // Isolated nodes start further out
+        const radius = isIsolated ? 250 + Math.random() * 50 : 100 + Math.random() * 100
+
+        return {
+          ...n,
+          // Scale val between 10 and 30 based on relative degree - ensure minimum size for clickability
+          val: Math.max(10, 10 + (n.degreeNum / maxDegree) * 20),
+          // Initial position (will be overwritten by simulation, but ensures valid starting point)
+          fx: undefined, // Don't fix position
+          fy: undefined,
+          x: Math.cos(angle) * radius,
+          y: Math.sin(angle) * radius,
+          // Mark isolated nodes for debugging
+          _isolated: isIsolated,
+        }
+      }),
       links: (graphData.edges || []).map(e => ({
         source: e.source,
         target: e.target,
@@ -190,6 +214,68 @@ export function GraphExplorer({ initialNodeId, onSelectNode }: GraphExplorerProp
       maxDegree,
     }
   }, [graphData])
+
+  // Configure d3 forces for better node spacing
+  useEffect(() => {
+    if (!graphRef.current) return
+
+    const fg = graphRef.current
+
+    // Increase charge (repulsion) strength for better spacing
+    // Negative values = repulsion, more negative = stronger repulsion
+    fg.d3Force('charge')?.strength((node: any) => {
+      // Larger nodes (higher degree) get stronger repulsion
+      const baseStrength = -150
+      const sizeMultiplier = Math.sqrt(node.val || 10) / 3
+      return baseStrength * sizeMultiplier
+    })
+
+    // Adjust link distance based on connected nodes
+    fg.d3Force('link')?.distance((link: any) => {
+      const sourceSize = Math.sqrt(link.source?.val || 10) * 2.5
+      const targetSize = Math.sqrt(link.target?.val || 10) * 2.5
+      // Minimum distance is sum of radii plus padding
+      return Math.max(60, sourceSize + targetSize + 40)
+    })
+
+    // Add collision detection to prevent node overlap
+    // This ensures nodes don't overlap even when forces would push them together
+    const collisionForce = forceCollide<any>()
+      .radius((node: any) => {
+        // Collision radius = visual radius + padding
+        const nodeSize = Math.sqrt(node.val || 10) * 2.5
+        return nodeSize + 8 // 8px padding between nodes
+      })
+      .strength(0.8) // How strongly to enforce non-overlap (0-1)
+      .iterations(2) // More iterations = more accurate but slower
+
+    fg.d3Force('collision', collisionForce)
+
+    // Identify isolated nodes (no connections in visible graph)
+    const connectedNodeIds = new Set<string>()
+    forceGraphData.links.forEach((link: any) => {
+      const sourceId = typeof link.source === 'object' ? link.source.id : link.source
+      const targetId = typeof link.target === 'object' ? link.target.id : link.target
+      connectedNodeIds.add(sourceId)
+      connectedNodeIds.add(targetId)
+    })
+
+    // Add radial force to push isolated nodes to periphery
+    // This makes them visible and prevents them from getting stuck at origin
+    const radialForce = forceRadial<any>(200, 0, 0)
+      .strength((node: any) => {
+        // Only apply to isolated nodes
+        return connectedNodeIds.has(node.id) ? 0 : 0.3
+      })
+
+    fg.d3Force('radial', radialForce)
+
+    // Ensure center force keeps all nodes in view
+    fg.d3Force('center')?.strength(0.05)
+
+    // Reheat simulation to apply new forces
+    fg.d3ReheatSimulation()
+  }, [forceGraphData])
 
   const handleNodeClick = useCallback((node: any) => {
     setSelectedNodeId(node.id)
@@ -201,6 +287,53 @@ export function GraphExplorer({ initialNodeId, onSelectNode }: GraphExplorerProp
       graphRef.current.zoom(2, 500)
     }
   }, [onSelectNode])
+
+  // Proximity-based click detection for near misses
+  // When clicking background, find nearest node within threshold
+  const handleBackgroundClick = useCallback((event: MouseEvent) => {
+    if (!graphRef.current) return
+
+    // Get graph coordinates from screen coordinates
+    const graphCoords = graphRef.current.screen2GraphCoords(event.offsetX, event.offsetY)
+    if (!graphCoords) return
+
+    const { x: clickX, y: clickY } = graphCoords
+    const currentZoomLevel = graphRef.current.zoom() || 1
+
+    // Proximity threshold scales with zoom - smaller threshold when zoomed in
+    const baseThreshold = 40
+    const proximityThreshold = baseThreshold / Math.sqrt(currentZoomLevel)
+
+    let nearestNode: any = null
+    let nearestDistance = Infinity
+
+    // Find the nearest valid node
+    for (const node of forceGraphData.nodes) {
+      const nodeAny = node as any
+      if (nodeAny.x == null || nodeAny.y == null || isNaN(nodeAny.x) || isNaN(nodeAny.y)) {
+        continue
+      }
+
+      const dx = nodeAny.x - clickX
+      const dy = nodeAny.y - clickY
+      const distance = Math.sqrt(dx * dx + dy * dy)
+
+      // Account for node size - distance to edge of node, not center
+      const nodeSize = Math.sqrt(nodeAny.val || 10) * 2.5
+      const edgeDistance = Math.max(0, distance - nodeSize)
+
+      if (edgeDistance < nearestDistance && edgeDistance < proximityThreshold) {
+        nearestDistance = edgeDistance
+        nearestNode = nodeAny
+      }
+    }
+
+    if (nearestNode) {
+      setSelectedNodeId(nearestNode.id)
+      onSelectNode?.(nearestNode.id)
+      // Don't auto-zoom on proximity click - user may have intentionally zoomed out
+    }
+  }, [forceGraphData.nodes, onSelectNode])
 
   const handleNodeHover = useCallback((node: any) => {
     setHoveredNode(node || null)
@@ -243,6 +376,11 @@ export function GraphExplorer({ initialNodeId, onSelectNode }: GraphExplorerProp
 
   // Custom node rendering with level-of-detail
   const nodeCanvasObject = useCallback((node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+    // Guard against nodes without valid coordinates
+    if (node.x === undefined || node.y === undefined || isNaN(node.x) || isNaN(node.y)) {
+      return
+    }
+
     const label = node.name || 'Unknown'
     const nodeSize = Math.sqrt(node.val || 8) * 2.5
     const isSelected = node.id === selectedNodeId
@@ -268,10 +406,16 @@ export function GraphExplorer({ initialNodeId, onSelectNode }: GraphExplorerProp
     ctx.fillStyle = color
     ctx.fill()
 
-    // Draw border
+    // Draw border - dashed for isolated nodes
     ctx.strokeStyle = isSelected ? '#ffffff' : 'rgba(255, 255, 255, 0.3)'
     ctx.lineWidth = isSelected ? 2 : 1
+    if (node._isolated) {
+      // Dashed border for isolated nodes (no visible connections)
+      ctx.setLineDash([3 / globalScale, 3 / globalScale])
+      ctx.strokeStyle = 'rgba(255, 200, 100, 0.6)' // Amber tint
+    }
     ctx.stroke()
+    ctx.setLineDash([]) // Reset dash
 
     // Draw icon for high detail
     if (showFullDetail) {
@@ -392,15 +536,21 @@ export function GraphExplorer({ initialNodeId, onSelectNode }: GraphExplorerProp
     ctx.fill()
   }, [])
 
-  // Define clickable area for nodes (larger than visual size for easier clicking/dragging)
-  // This paints an invisible hit area that determines if mouse events should trigger on this node
+  // Paint hit detection area for each node
+  // This is used by the library to detect mouse events
   const nodePointerAreaPaint = useCallback((node: any, color: string, ctx: CanvasRenderingContext2D) => {
-    // Use a fixed large radius for ALL nodes to ensure they're always easy to click/drag
-    // The color parameter is used internally by force-graph for hit detection
-    const clickableRadius = 25  // Fixed 25px radius for all nodes regardless of visual size
-    ctx.beginPath()
-    ctx.arc(node.x, node.y, clickableRadius, 0, 2 * Math.PI)
+    // The library assigns each node a unique color for hit detection
+    // We paint that color in the area where we want the node to be clickable
+    const x = node.x
+    const y = node.y
+    if (x == null || y == null || isNaN(x) || isNaN(y)) return
+
+    // Match visual node size exactly - no padding to reduce overlap issues
+    const nodeSize = Math.sqrt(node.val || 10) * 2.5
+
     ctx.fillStyle = color
+    ctx.beginPath()
+    ctx.arc(x, y, nodeSize, 0, 2 * Math.PI)
     ctx.fill()
   }, [])
 
@@ -599,12 +749,14 @@ export function GraphExplorer({ initialNodeId, onSelectNode }: GraphExplorerProp
               height={dimensions.height}
               graphData={forceGraphData}
               nodeCanvasObject={nodeCanvasObject}
+              nodeCanvasObjectMode={() => 'replace'}
               nodePointerAreaPaint={nodePointerAreaPaint}
               linkCanvasObject={linkCanvasObject}
               onNodeClick={handleNodeClick}
               onNodeHover={handleNodeHover}
               onNodeDrag={handleNodeHover}
               onNodeDragEnd={() => setHoveredNode(null)}
+              onBackgroundClick={handleBackgroundClick}
               onZoom={handleZoomChange}
               nodeLabel={() => ''}
               enableNodeDrag={true}
@@ -612,17 +764,37 @@ export function GraphExplorer({ initialNodeId, onSelectNode }: GraphExplorerProp
               enablePanInteraction={true}
               linkDirectionalArrowLength={0}
               linkWidth={2}
-              cooldownTicks={100}
+              cooldownTicks={150}
               warmupTicks={50}
               backgroundColor="transparent"
-              d3AlphaDecay={0.02}
-              d3VelocityDecay={0.3}
-              nodeRelSize={6}
+              d3AlphaDecay={0.015}
+              d3VelocityDecay={0.25}
+              nodeRelSize={4}
               minZoom={0.1}
               maxZoom={10}
               dagMode={layoutMode === 'hierarchy' ? 'td' : undefined}
               dagLevelDistance={layoutMode === 'hierarchy' ? 50 : undefined}
               autoPauseRedraw={false}
+              // Force configuration for better node spacing
+              d3AlphaMin={0.001}
+              onEngineStop={() => {
+                // Log simulation results for debugging
+                const invalidNodes = forceGraphData.nodes.filter((n: any) =>
+                  n.x == null || n.y == null || isNaN(n.x) || isNaN(n.y)
+                )
+                const isolatedNodes = forceGraphData.nodes.filter((n: any) => n._isolated)
+
+                if (invalidNodes.length > 0) {
+                  console.warn(`[GraphExplorer] ${invalidNodes.length} nodes have invalid positions:`,
+                    invalidNodes.map((n: any) => ({ id: n.id, name: n.name, x: n.x, y: n.y }))
+                  )
+                }
+                if (isolatedNodes.length > 0) {
+                  console.info(`[GraphExplorer] ${isolatedNodes.length} isolated nodes (no visible connections):`,
+                    isolatedNodes.map((n: any) => ({ id: n.id, name: n.name, x: n.x?.toFixed(1), y: n.y?.toFixed(1) }))
+                  )
+                }
+              }}
             />
           )}
 

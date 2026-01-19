@@ -875,6 +875,17 @@ docgraphRouter.get('/graph/sample', async (req, res) => {
       const seenEdges = new Set<string>()
       const directoryNodes = new Map<string, { id: string; name: string; path: string; parentPath: string | null }>()
 
+      // Simple hash function for creating stable IDs from paths
+      const hashPath = (path: string): string => {
+        let hash = 0
+        for (let i = 0; i < path.length; i++) {
+          const char = path.charCodeAt(i)
+          hash = ((hash << 5) - hash) + char
+          hash = hash & hash // Convert to 32-bit integer
+        }
+        return Math.abs(hash).toString(36)
+      }
+
       // Helper to create directory hierarchy from a file path
       const addDirectoryHierarchy = (filePath: string, fileId: string) => {
         if (!filePath) return
@@ -895,8 +906,8 @@ docgraphRouter.get('/graph/sample', async (req, res) => {
           const dirName = dirParts[i]!
 
           if (!directoryNodes.has(dirPath)) {
-            // Create a stable ID from the path
-            const dirId = `dir:${dirPath}`
+            // Create a stable ID from the path using hash (no special characters)
+            const dirId = `dir-${hashPath(dirPath)}`
             directoryNodes.set(dirPath, {
               id: dirId,
               name: dirName,

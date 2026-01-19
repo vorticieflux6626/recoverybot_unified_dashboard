@@ -54,6 +54,9 @@ SERVICES=(
     ["postgres"]="5432:pg_isready:postgres:docker"
     ["redis"]="6379:redis-ping:redis:docker"
     ["milvus"]="9091:/healthz:milvus:docker"
+    ["neo4j"]="7474:/:neo4j:docker"
+    ["minio"]="9000:/minio/health/live:minio:docker"
+    ["etcd"]="2379:/health:etcd:docker"
     ["searxng"]="8888:/healthz:searxng:docker"
     ["memos"]="8001:/api/v1/health:memos:python"
     ["pdf-tools"]="8002:/health:pdf-tools:python"
@@ -961,6 +964,27 @@ cmd_status() {
         printf "%-15s %-8s ${RED}%-10s${NC} %s\n" "milvus" "19530" "stopped" ""
     fi
 
+    # Neo4j (DocGraph)
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "docgraph-neo4j"; then
+        printf "%-15s %-8s ${GREEN}%-10s${NC} %s\n" "neo4j" "7474" "running" "graph db"
+    else
+        printf "%-15s %-8s ${RED}%-10s${NC} %s\n" "neo4j" "7474" "stopped" ""
+    fi
+
+    # MinIO (Milvus storage)
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "milvus-minio"; then
+        printf "%-15s %-8s ${GREEN}%-10s${NC} %s\n" "minio" "9000" "running" "object storage"
+    else
+        printf "%-15s %-8s ${RED}%-10s${NC} %s\n" "minio" "9000" "stopped" ""
+    fi
+
+    # etcd (Milvus metadata)
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "milvus-etcd"; then
+        printf "%-15s %-8s ${GREEN}%-10s${NC} %s\n" "etcd" "2379" "running" "metadata store"
+    else
+        printf "%-15s %-8s ${RED}%-10s${NC} %s\n" "etcd" "2379" "stopped" ""
+    fi
+
     # SearXNG
     if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^searxng$"; then
         printf "%-15s %-8s ${GREEN}%-10s${NC} %s\n" "searxng" "8888" "running" "metasearch"
@@ -1120,6 +1144,41 @@ cmd_health() {
         passed=$((passed + 1))
     else
         log_warning "Milvus not responding (optional for code indexing)"
+        warnings=$((warnings + 1))
+    fi
+    echo ""
+
+    # Neo4j (DocGraph)
+    echo -e "${BOLD}Neo4j (7474/7687):${NC}"
+    if curl -s "http://localhost:7474" >/dev/null 2>&1; then
+        local neo4j_version=$(curl -s "http://localhost:7474" 2>/dev/null | jq -r '.neo4j_version // "unknown"' 2>/dev/null || echo "responding")
+        echo "  Version: $neo4j_version"
+        log_success "Neo4j healthy"
+        passed=$((passed + 1))
+    else
+        log_warning "Neo4j not responding (optional for code graph)"
+        warnings=$((warnings + 1))
+    fi
+    echo ""
+
+    # MinIO
+    echo -e "${BOLD}MinIO (9000/9001):${NC}"
+    if curl -s "http://localhost:9000/minio/health/live" >/dev/null 2>&1; then
+        log_success "MinIO healthy"
+        passed=$((passed + 1))
+    else
+        log_warning "MinIO not responding (Milvus storage backend)"
+        warnings=$((warnings + 1))
+    fi
+    echo ""
+
+    # etcd (internal to Docker network, use docker exec)
+    echo -e "${BOLD}etcd (2379):${NC}"
+    if docker exec milvus-etcd etcdctl endpoint health 2>/dev/null | grep -q "is healthy"; then
+        log_success "etcd healthy"
+        passed=$((passed + 1))
+    else
+        log_warning "etcd not responding (Milvus metadata store)"
         warnings=$((warnings + 1))
     fi
     echo ""
@@ -1299,7 +1358,7 @@ cmd_diagnose() {
     printf "%-10s %-8s %-20s\n" "PORT" "STATUS" "PROCESS"
     printf "%-10s %-8s %-20s\n" "────────" "──────" "────────────────────"
 
-    for port in 3100 3101 7777 8001 8002 8003 8081 8082 8100 8888 9091 19530 5432 6379 11434; do
+    for port in 3100 3101 7777 8001 8002 8003 8081 8082 8100 8888 9091 19530 5432 6379 11434 7474 7687 9000 9001 2379; do
         if port_in_use $port; then
             local proc=$(get_port_user $port)
             printf "%-10s ${GREEN}%-8s${NC} %s\n" "$port" "in use" "$proc"

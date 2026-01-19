@@ -14,7 +14,9 @@
 #   ./ecosystem.sh help                   - Show this help
 #
 
-set -e
+# Don't use set -e as we handle errors explicitly and some services
+# may fail to start while others should continue
+# set -e
 
 # ============================================================================
 # Configuration
@@ -461,10 +463,17 @@ start_pdf_tools() {
         return 0
     fi
 
-    # Check if port is available
-    if ! check_port_available 8002 "PDF Tools"; then
-        log_error "Cannot start PDF Tools - port 8002 in use"
-        return 1
+    # Check if a process is already running on port 8002 (might be loading)
+    if port_in_use 8002; then
+        log_warning "Port 8002 in use - checking if PDF Tools is still loading..."
+        # Give it extra time if process exists but health check not responding
+        if wait_for_service "pdf-tools" 8002 "/health" 180; then
+            log_success "PDF Tools API finished loading"
+            return 0
+        else
+            log_error "PDF Tools process exists but not responding"
+            return 1
+        fi
     fi
 
     # Check if directory and script exist
@@ -485,24 +494,41 @@ start_pdf_tools() {
     local pdf_log="$PDF_TOOLS/startup.log"
     echo "=== PDF Tools startup at $(date) ===" > "$pdf_log"
 
-    ./api_server.sh start --domain full >> "$pdf_log" 2>&1 &
-    local pid=$!
-    log_info "Started PDF Tools launcher (PID: $pid)"
+    # Set longer timeout for large graph loading (525K+ nodes)
+    export PDF_TOOLS_STARTUP_TIMEOUT=240
 
-    if wait_for_service "pdf-tools" 8002 "/health" 120; then
-        log_success "PDF Tools API started (graph loading may take time)"
-    else
+    # Start synchronously (api_server.sh handles backgrounding internally)
+    ./api_server.sh start --domain full >> "$pdf_log" 2>&1
+    local exit_code=$?
+
+    # Even if api_server.sh reported timeout, check if process is actually running
+    if [ $exit_code -ne 0 ]; then
+        log_warning "api_server.sh reported failure, checking if server is still loading..."
+
+        # Check if process is running on port 8002
+        if port_in_use 8002; then
+            log_info "Server process is running, waiting for health endpoint (large graph loading)..."
+            # Extended wait for large graphs
+            if wait_for_service "pdf-tools" 8002 "/health" 180; then
+                log_success "PDF Tools API started (after extended wait for graph loading)"
+                return 0
+            fi
+        fi
+
         log_error "PDF Tools API failed to start"
         if [ -f "$pdf_log" ]; then
             show_startup_error "$pdf_log" "PDF Tools" 30
         fi
         # Check for API log
-        if [ -f "$PDF_TOOLS/api.log" ]; then
-            echo -e "${YELLOW}Recent api.log:${NC}"
-            tail -20 "$PDF_TOOLS/api.log" 2>/dev/null | sed 's/^/  /'
+        if [ -f "$PDF_TOOLS/api_server.log" ]; then
+            echo -e "${YELLOW}Recent api_server.log:${NC}"
+            tail -20 "$PDF_TOOLS/api_server.log" 2>/dev/null | sed 's/^/  /'
         fi
         return 1
     fi
+
+    log_success "PDF Tools API started"
+    return 0
 }
 
 stop_pdf_tools() {

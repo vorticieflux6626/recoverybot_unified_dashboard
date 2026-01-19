@@ -6,9 +6,11 @@ import { docsRouter } from './routes/docs'
 import { gpuRouter } from './routes/gpu'
 import { processesRouter } from './routes/processes'
 import { agentRouter } from './routes/agent'
+import { docgraphRouter } from './routes/docgraph'
+import { DASHBOARD_BACKEND_PORT } from '../config/ports'
 
 const app = express()
-const PORT = process.env.PORT || 3101
+const PORT = DASHBOARD_BACKEND_PORT
 
 app.use(cors())
 app.use(express.json())
@@ -20,6 +22,7 @@ app.use('/api/docs', docsRouter)
 app.use('/api/gpu', gpuRouter)
 app.use('/api/processes', processesRouter)
 app.use('/api/agent', agentRouter)
+app.use('/api/docgraph', docgraphRouter)
 
 // Root health check
 app.get('/api/health-check', (req, res) => {

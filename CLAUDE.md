@@ -1,6 +1,6 @@
 # Unified System Dashboard
 
-> **Created**: 2026-01-03 | **Updated**: 2026-01-13 | **Port**: 3100 | **Version**: 0.3.2
+> **Created**: 2026-01-03 | **Updated**: 2026-01-18 | **Port**: 3100 | **Version**: 0.4.0
 
 ## Quick Reference
 
@@ -74,6 +74,30 @@ This dashboard consolidates 14-15 GUI services from the Recovery Bot ecosystem i
 | 3100 | Frontend (Vite) | Dashboard UI |
 | 3101 | Backend (Express) | API aggregation |
 
+### Central Port Configuration
+
+**Location**: `config/ports.ts`
+
+All service ports are centralized in a single TypeScript config file. Import from this file instead of hardcoding ports:
+
+```typescript
+// In server code
+import { MEMOS_BASE_URL, DASHBOARD_BACKEND_PORT } from '../config/ports'
+
+// In frontend code (via @config alias)
+import { DASHBOARD_FRONTEND_PORT, SERVICE_LINKS } from '@config/ports'
+```
+
+**Available exports**:
+- Port constants: `DASHBOARD_FRONTEND_PORT`, `DASHBOARD_BACKEND_PORT`, `MEMOS_PORT`, `GATEWAY_PORT`, etc.
+- Base URLs: `MEMOS_BASE_URL`, `GATEWAY_BASE_URL`, `OLLAMA_BASE_URL`, etc.
+- Service configs: `HEALTH_CHECK_SERVICES`, `SERVICE_LINKS`
+
+**Environment overrides**:
+- `PORT` - Override dashboard backend port (default: 3101)
+- `MEMOS_URL` - Override memOS base URL (default: http://localhost:8001)
+- `GATEWAY_URL` - Override Gateway base URL (default: http://localhost:8100)
+
 ### API Endpoints
 
 | Endpoint | Method | Description |
@@ -94,6 +118,13 @@ This dashboard consolidates 14-15 GUI services from the Recovery Bot ecosystem i
 | `/api/agent/config/llm-models/presets/:name` | POST | Apply a preset |
 | `/api/agent/config/llm-models/raw` | GET | Get raw YAML content |
 | `/api/agent/config/llm-models/raw` | PUT | Save raw YAML content |
+| `/api/docgraph/stats` | GET | DocGraph index statistics |
+| `/api/docgraph/search` | GET | Search code entities |
+| `/api/docgraph/entity/:uuid` | GET | Get entity details |
+| `/api/docgraph/callers/:uuid` | GET | Get functions calling entity |
+| `/api/docgraph/callees/:uuid` | GET | Get functions called by entity |
+| `/api/docgraph/projects` | GET | List indexed projects |
+| `/api/docgraph/health` | GET | DocGraph service health |
 
 ### LLM Model Configuration API (memOS)
 
@@ -151,7 +182,16 @@ unified_dashboard/
 │   │   │       ├── PresetSelector.tsx
 │   │   │       ├── PipelineStageCard.tsx
 │   │   │       └── RawYamlEditor.tsx
+│   │   ├── docgraph/    # Code Intelligence
+│   │   │   ├── SearchPanel.tsx   # Search interface
+│   │   │   ├── StatsPanel.tsx    # Statistics dashboard
+│   │   │   └── index.ts          # Barrel export
 │   │   └── tabs/        # Main tab views
+│   │       ├── OverviewTab.tsx
+│   │       ├── LogsTab.tsx
+│   │       ├── DocsTab.tsx
+│   │       ├── CodeIntelligenceTab.tsx
+│   │       └── SettingsTab.tsx
 │   ├── hooks/           # Custom React hooks
 │   ├── stores/          # Zustand stores
 │   │   ├── dashboardStore.ts
@@ -164,7 +204,8 @@ unified_dashboard/
 │   │   ├── logs.ts      # Log collection
 │   │   ├── docs.ts      # Documentation server
 │   │   ├── processes.ts # Process monitoring
-│   │   └── agent.ts     # Agent API + config proxy
+│   │   ├── agent.ts     # Agent API + config proxy
+│   │   └── docgraph.ts  # DocGraph search API
 │   └── index.ts         # Express entry point
 └── public/              # Static assets
 ```
@@ -228,6 +269,73 @@ curl -X POST http://localhost:8100/api/embed \
   -H "Content-Type: application/json" \
   -d '{"model":"nomic-embed-text","input":"your query"}'
 ```
+
+## Code Intelligence Tab
+
+The Code Intelligence tab provides semantic code search and exploration powered by the DocGraph system.
+
+### Features
+
+- **Search**: Full-text and semantic search across functions, classes, and documents
+- **Browse**: File tree browser for documentation
+- **Stats**: Real-time indexing statistics showing entity counts and service health
+- **Graph Explorer**: Interactive code relationship visualization with:
+  - **Entity Type Views**: Functions, Classes, or Documents
+  - **Project Filtering**: Filter by indexed project
+  - **Directory Hierarchy**: Visual representation of project structure (directories → files → classes → methods)
+  - **Relationship Types**: CALLS, DOCUMENTS, EXTENDS, IMPLEMENTS, CONTAINS, DEFINES
+  - **Layout Modes**: Force-directed (exploration) or Hierarchical (tree view)
+  - **Level-of-Detail**: Automatic detail adjustment based on zoom level
+  - **Node Details Panel**: Full entity information with callers/callees, arguments, signatures
+
+### Graph Explorer Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `Escape` | Deselect node |
+| `Ctrl/Cmd + F` | Focus search |
+| `+` / `-` | Zoom in/out |
+| `0` | Fit to view |
+| `H` | Toggle hierarchy layout |
+| `?` | Toggle keyboard help |
+
+### Graph Node Types
+
+| Type | Color | Description |
+|------|-------|-------------|
+| Function | Blue | Functions and methods |
+| Class | Green | Class definitions |
+| Document | Orange | Documentation files |
+| File | Yellow | Source code files |
+| Directory | Purple | Project directories |
+
+### Graph Edge Types
+
+| Type | Style | Description |
+|------|-------|-------------|
+| CALLS | Solid indigo | Function call relationships |
+| DOCUMENTS | Solid purple | Documentation links |
+| EXTENDS | Solid green | Class inheritance |
+| IMPLEMENTS | Dashed blue | Interface implementation |
+| CONTAINS | Dotted orange | File/directory containment |
+| DEFINES | Dotted yellow | Class method definitions |
+
+### Indexed Data (via DocGraph)
+- ~400K functions with call graph relationships
+- ~74K classes with inheritance hierarchies (EXTENDS, IMPLEMENTS)
+- ~2.1M CALLS relationships
+- Documents linked to code entities
+- Full-text search via Neo4j
+- Vector similarity search via Milvus (coming soon)
+
+### Service Dependencies
+| Service | Port | Purpose |
+|---------|------|---------|
+| Neo4j | 7687 | Graph database for code relationships |
+| Milvus | 19530 | Vector store for semantic search |
+| Gateway | 8100 | Embedding generation |
+
+---
 
 ## Agent Configuration Panel
 

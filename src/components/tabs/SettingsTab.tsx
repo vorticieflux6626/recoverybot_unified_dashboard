@@ -1,71 +1,26 @@
 import { Settings, Server, Database, Cpu, HardDrive, ExternalLink } from 'lucide-react'
+import {
+  SERVICE_LINKS,
+  DASHBOARD_FRONTEND_PORT,
+  DASHBOARD_BACKEND_PORT,
+} from '@config/ports'
 
-interface ServiceLink {
-  name: string
-  url: string
-  port: number
-  icon: React.ReactNode
-  description: string
+// Map icons to service names (icons can't be in config due to React components)
+const serviceIcons: Record<string, React.ReactNode> = {
+  'memOS API': <Server className="w-5 h-5" />,
+  'LLM Gateway': <Cpu className="w-5 h-5" />,
+  'PDF Tools API': <HardDrive className="w-5 h-5" />,
+  'SearXNG': <ExternalLink className="w-5 h-5" />,
+  'Grafana': <Database className="w-5 h-5" />,
+  'Milvus WebUI': <Database className="w-5 h-5" />,
+  'MinIO Console': <HardDrive className="w-5 h-5" />,
+  'Open-WebUI': <Cpu className="w-5 h-5" />,
 }
 
-const serviceLinks: ServiceLink[] = [
-  {
-    name: 'memOS API',
-    url: 'http://localhost:8001/docs',
-    port: 8001,
-    icon: <Server className="w-5 h-5" />,
-    description: 'FastAPI documentation for memOS server',
-  },
-  {
-    name: 'LLM Gateway',
-    url: 'http://localhost:8100/docs',
-    port: 8100,
-    icon: <Cpu className="w-5 h-5" />,
-    description: 'LLM routing and management',
-  },
-  {
-    name: 'PDF Tools API',
-    url: 'http://localhost:8002/docs',
-    port: 8002,
-    icon: <HardDrive className="w-5 h-5" />,
-    description: 'PDF extraction and graph operations',
-  },
-  {
-    name: 'SearXNG',
-    url: 'http://localhost:8888',
-    port: 8888,
-    icon: <ExternalLink className="w-5 h-5" />,
-    description: 'Metasearch engine',
-  },
-  {
-    name: 'Grafana',
-    url: 'http://localhost:3000',
-    port: 3000,
-    icon: <Database className="w-5 h-5" />,
-    description: 'Metrics visualization',
-  },
-  {
-    name: 'Milvus WebUI',
-    url: 'http://localhost:9091',
-    port: 9091,
-    icon: <Database className="w-5 h-5" />,
-    description: 'Vector database management',
-  },
-  {
-    name: 'MinIO Console',
-    url: 'http://localhost:9001',
-    port: 9001,
-    icon: <HardDrive className="w-5 h-5" />,
-    description: 'Object storage management',
-  },
-  {
-    name: 'Open-WebUI',
-    url: 'http://localhost:8080',
-    port: 8080,
-    icon: <Cpu className="w-5 h-5" />,
-    description: 'LLM chat interface',
-  },
-]
+const serviceLinks = SERVICE_LINKS.map(link => ({
+  ...link,
+  icon: serviceIcons[link.name] || <Server className="w-5 h-5" />,
+}))
 
 export function SettingsTab() {
   return (
@@ -171,11 +126,11 @@ export function SettingsTab() {
             </div>
             <div>
               <dt className="text-muted-foreground">Dashboard Port</dt>
-              <dd className="text-foreground font-medium">3100</dd>
+              <dd className="text-foreground font-medium">{DASHBOARD_FRONTEND_PORT}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">Backend Port</dt>
-              <dd className="text-foreground font-medium">3101</dd>
+              <dd className="text-foreground font-medium">{DASHBOARD_BACKEND_PORT}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">React Version</dt>

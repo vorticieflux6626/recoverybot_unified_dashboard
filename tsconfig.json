@@ -18,9 +18,11 @@
     "noUncheckedIndexedAccess": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@config/*": ["./config/*"],
+      "@ecosystem/*": ["./ecosystem_config/*"]
     }
   },
-  "include": ["src"],
+  "include": ["src", "config", "ecosystem_config"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

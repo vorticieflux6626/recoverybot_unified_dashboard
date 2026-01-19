@@ -1,25 +1,10 @@
 import { Router } from 'express'
 import { createConnection } from 'net'
+import { HEALTH_CHECK_SERVICES, type ServiceConfig } from '../../config/ports'
 
 export const healthRouter = Router()
 
-interface ServiceConfig {
-  name: string
-  port: number
-  healthEndpoint: string
-  type: 'http' | 'tcp'
-}
-
-const SERVICES: ServiceConfig[] = [
-  { name: 'memOS', port: 8001, healthEndpoint: '/api/v1/system/health/aggregate', type: 'http' },
-  { name: 'Gateway', port: 8100, healthEndpoint: '/health', type: 'http' },
-  { name: 'SearXNG', port: 8888, healthEndpoint: '/healthz', type: 'http' },
-  { name: 'PDF Tools', port: 8002, healthEndpoint: '/health', type: 'http' },
-  { name: 'Ollama', port: 11434, healthEndpoint: '/api/version', type: 'http' },
-  { name: 'Milvus', port: 9091, healthEndpoint: '/healthz', type: 'http' },
-  { name: 'PostgreSQL', port: 5432, healthEndpoint: '', type: 'tcp' },
-  { name: 'Redis', port: 6379, healthEndpoint: '', type: 'tcp' },
-]
+const SERVICES = HEALTH_CHECK_SERVICES
 
 async function checkHttpHealth(service: ServiceConfig): Promise<{
   status: 'healthy' | 'unhealthy' | 'unknown'

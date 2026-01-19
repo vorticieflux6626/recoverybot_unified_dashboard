@@ -7,7 +7,9 @@ import {
   Settings,
   Cpu,
   Bot,
+  Braces,
 } from 'lucide-react'
+import { DASHBOARD_FRONTEND_PORT } from '@config/ports'
 
 interface SidebarProps {
   activeTab: TabType
@@ -17,6 +19,7 @@ interface SidebarProps {
 const navItems: { id: TabType; label: string; icon: React.ReactNode }[] = [
   { id: 'overview', label: 'Overview', icon: <LayoutDashboard className="w-5 h-5" /> },
   { id: 'agent', label: 'Agent Console', icon: <Bot className="w-5 h-5" /> },
+  { id: 'code-intel', label: 'Code Intelligence', icon: <Braces className="w-5 h-5" /> },
   { id: 'logs', label: 'Logs', icon: <ScrollText className="w-5 h-5" /> },
   { id: 'docs', label: 'Documentation', icon: <FileText className="w-5 h-5" /> },
   { id: 'settings', label: 'Settings', icon: <Settings className="w-5 h-5" /> },
@@ -63,7 +66,7 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
       {/* Footer */}
       <div className="p-4 border-t border-border">
         <div className="text-xs text-muted-foreground">
-          <p>Port: 3100</p>
+          <p>Port: {DASHBOARD_FRONTEND_PORT}</p>
           <p>Version: 0.1.0</p>
         </div>
       </div>

@@ -1,9 +1,8 @@
 import { Router, Request, Response } from 'express'
 import { randomUUID } from 'crypto'
+import { MEMOS_BASE_URL } from '../../config/ports'
 
 export const agentRouter = Router()
-
-const MEMOS_BASE_URL = process.env.MEMOS_URL || 'http://localhost:8001'
 
 // Store active search requests
 const activeSearches = new Map<string, { query: string; preset: string; startTime: number }>()

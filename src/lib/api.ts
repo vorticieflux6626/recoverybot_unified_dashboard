@@ -254,3 +254,339 @@ export async function saveRawYaml(yaml: string): Promise<{ success: boolean }> {
   }
   return res.json()
 }
+
+// ============================================================================
+// DocGraph Code Intelligence API
+// ============================================================================
+
+export interface DocGraphSearchResult {
+  uuid: string
+  entity_type: 'function' | 'class' | 'document'
+  name: string
+  qualified_name?: string
+  file_path: string
+  project?: string
+  line_start?: number
+  line_end?: number
+  score?: number
+}
+
+export interface DocGraphEntityStats {
+  functions: number
+  classes: number
+  documents: number
+  files: number
+  projects: number
+}
+
+export interface DocGraphProjectStats {
+  name: string
+  functions: number
+  classes: number
+  documents: number
+  files: number
+}
+
+export interface DocGraphStats {
+  entities: DocGraphEntityStats
+  projects: DocGraphProjectStats[]
+  lastIndexed?: string
+  services: {
+    neo4j: 'up' | 'down'
+    milvus: 'up' | 'down'
+    gateway: 'up' | 'down'
+  }
+}
+
+export interface DocGraphEntity {
+  uuid: string
+  name: string
+  entity_type: string
+  file_path?: string
+  qualified_name?: string
+  line_start?: number
+  line_end?: number
+  docstring?: string
+  callees: string[]
+  callers: string[]
+  documents: string[]
+  documented_by: string[]
+}
+
+export interface DocGraphHealth {
+  status: 'healthy' | 'degraded'
+  services: {
+    neo4j: { status: 'up' | 'down'; latency: number }
+    milvus: { status: 'up' | 'down'; latency: number }
+    gateway: { status: 'up' | 'down'; latency: number }
+  }
+  timestamp: string
+}
+
+// Fetch DocGraph statistics
+export async function fetchDocGraphStats(): Promise<DocGraphStats> {
+  const res = await fetch(`${API_BASE}/docgraph/stats`)
+  if (!res.ok) throw new Error('Failed to fetch DocGraph stats')
+  return res.json()
+}
+
+// Search DocGraph
+export async function searchDocGraph(params: {
+  query: string
+  type?: 'keyword' | 'semantic' | 'hybrid'
+  limit?: number
+  entityTypes?: string[]
+}): Promise<{ results: DocGraphSearchResult[]; query: string; type: string; count: number }> {
+  const searchParams = new URLSearchParams()
+  searchParams.set('q', params.query)
+  if (params.type) searchParams.set('type', params.type)
+  if (params.limit) searchParams.set('limit', params.limit.toString())
+  if (params.entityTypes?.length) searchParams.set('entityTypes', params.entityTypes.join(','))
+
+  const res = await fetch(`${API_BASE}/docgraph/search?${searchParams}`)
+  if (!res.ok) throw new Error('Failed to search DocGraph')
+  return res.json()
+}
+
+// Fetch entity details
+export async function fetchDocGraphEntity(uuid: string): Promise<DocGraphEntity> {
+  const res = await fetch(`${API_BASE}/docgraph/entity/${encodeURIComponent(uuid)}`)
+  if (!res.ok) throw new Error('Entity not found')
+  return res.json()
+}
+
+// Fetch callers of an entity
+export async function fetchDocGraphCallers(uuid: string, depth = 1, limit = 50): Promise<{
+  uuid: string
+  callers: Array<{
+    uuid: string
+    name: string
+    qualified_name: string
+    file_path: string
+    line_start: number
+    distance: number
+  }>
+  count: number
+}> {
+  const res = await fetch(`${API_BASE}/docgraph/callers/${encodeURIComponent(uuid)}?depth=${depth}&limit=${limit}`)
+  if (!res.ok) throw new Error('Failed to fetch callers')
+  return res.json()
+}
+
+// Fetch callees of an entity
+export async function fetchDocGraphCallees(uuid: string, depth = 1, limit = 50): Promise<{
+  uuid: string
+  callees: Array<{
+    uuid: string
+    name: string
+    qualified_name: string
+    file_path: string
+    line_start: number
+    distance: number
+  }>
+  count: number
+}> {
+  const res = await fetch(`${API_BASE}/docgraph/callees/${encodeURIComponent(uuid)}?depth=${depth}&limit=${limit}`)
+  if (!res.ok) throw new Error('Failed to fetch callees')
+  return res.json()
+}
+
+// Fetch all projects
+export async function fetchDocGraphProjects(): Promise<{
+  projects: Array<{
+    name: string
+    root_path: string
+    description?: string
+    repository?: string
+  }>
+}> {
+  const res = await fetch(`${API_BASE}/docgraph/projects`)
+  if (!res.ok) throw new Error('Failed to fetch projects')
+  return res.json()
+}
+
+// Fetch DocGraph health
+export async function fetchDocGraphHealth(): Promise<DocGraphHealth> {
+  const res = await fetch(`${API_BASE}/docgraph/health`)
+  if (!res.ok) throw new Error('Failed to fetch DocGraph health')
+  return res.json()
+}
+
+// Source code response
+export interface SourceCodeResponse {
+  path: string
+  filename: string
+  extension: string
+  content: string
+  startLine: number
+  endLine: number
+  totalLines: number
+  highlightStart: number
+  highlightEnd: number
+}
+
+// Graph data types
+export interface GraphNode {
+  id: string
+  name: string
+  type: 'function' | 'class' | 'document' | 'file' | 'directory'
+  file_path?: string
+  qualified_name?: string
+  project?: string
+  degree?: number
+}
+
+export interface GraphEdge {
+  source: string
+  target: string
+  type: 'CALLS' | 'DOCUMENTS' | 'EXTENDS' | 'IMPLEMENTS' | 'CONTAINS' | 'DEFINES'
+}
+
+export interface GraphData {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+  nodeCount: number
+  edgeCount: number
+  centerNode?: string
+}
+
+// Fetch graph data centered on an entity
+export async function fetchGraphData(uuid: string, depth = 2, limit = 50): Promise<GraphData> {
+  const res = await fetch(`${API_BASE}/docgraph/graph/${encodeURIComponent(uuid)}?depth=${depth}&limit=${limit}`)
+  if (!res.ok) throw new Error('Failed to fetch graph data')
+  return res.json()
+}
+
+// Fetch sample graph for exploration
+export async function fetchSampleGraph(type = 'function', limit = 100, project?: string): Promise<GraphData> {
+  const params = new URLSearchParams({ type, limit: String(limit) })
+  if (project) params.set('project', project)
+  const res = await fetch(`${API_BASE}/docgraph/graph/sample?${params}`)
+  if (!res.ok) throw new Error('Failed to fetch sample graph')
+  return res.json()
+}
+
+// Fetch source code content
+export async function fetchSourceCode(params: {
+  path: string
+  lineStart?: number
+  lineEnd?: number
+  context?: number
+}): Promise<SourceCodeResponse> {
+  const searchParams = new URLSearchParams()
+  searchParams.set('path', params.path)
+  if (params.lineStart) searchParams.set('lineStart', params.lineStart.toString())
+  if (params.lineEnd) searchParams.set('lineEnd', params.lineEnd.toString())
+  if (params.context) searchParams.set('context', params.context.toString())
+
+  const res = await fetch(`${API_BASE}/docgraph/source?${searchParams}`)
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ error: 'Failed to fetch source' }))
+    throw new Error(error.error || 'Failed to fetch source')
+  }
+  return res.json()
+}
+
+// ============================================================================
+// Enhanced DocGraph Types for Graph Explorer
+// ============================================================================
+
+export interface FileTreeNode {
+  name: string
+  path: string
+  type: 'file' | 'directory'
+  entityCount?: number
+  children?: FileTreeNode[]
+}
+
+export interface FileTreeResponse {
+  files: Array<{ path: string; entityCount: number }>
+  count: number
+  project: string
+}
+
+export interface ClassHierarchyMethod {
+  uuid: string
+  name: string
+  signature?: string
+  is_async: boolean
+  is_static: boolean
+  visibility: string
+  line_start?: number
+}
+
+export interface ClassHierarchy {
+  class: {
+    uuid: string
+    name: string
+    qualified_name?: string
+    file_path?: string
+    line_start?: number
+    line_end?: number
+    docstring?: string
+  }
+  parent?: { uuid: string; name: string; qualified_name?: string }
+  interfaces: Array<{ uuid: string; name: string; qualified_name?: string }>
+  children: Array<{ uuid: string; name: string; qualified_name?: string }>
+  methods: ClassHierarchyMethod[]
+}
+
+export interface EnhancedDocGraphEntity {
+  uuid: string
+  name: string
+  entity_type: string
+  file_path?: string
+  qualified_name?: string
+  line_start?: number
+  line_end?: number
+  docstring?: string
+  signature?: string
+  return_type?: string
+  is_async?: boolean
+  is_static?: boolean
+  is_method?: boolean
+  visibility?: 'public' | 'private' | 'protected'
+  parent_class?: { uuid: string; name: string; qualified_name?: string }
+  arguments?: Array<{
+    name: string
+    type?: string
+    required: boolean
+    default_value?: string
+    position: number
+  }>
+  // Enhanced relationship data with UUIDs
+  callees: Array<{ uuid: string; name: string; qualified_name?: string }>
+  callers: Array<{ uuid: string; name: string; qualified_name?: string }>
+  documents: Array<{ uuid: string; title: string; path?: string }>
+  documented_by: Array<{ uuid: string; title: string; path?: string }>
+}
+
+export interface EnhancedGraphNode extends GraphNode {
+  signature?: string
+  is_async?: boolean
+  visibility?: string
+}
+
+// Fetch file tree for a project
+export async function fetchFileTree(project?: string): Promise<FileTreeResponse> {
+  const params = new URLSearchParams()
+  if (project) params.set('project', project)
+
+  const res = await fetch(`${API_BASE}/docgraph/files?${params}`)
+  if (!res.ok) throw new Error('Failed to fetch file tree')
+  return res.json()
+}
+
+// Fetch class hierarchy
+export async function fetchClassHierarchy(uuid: string): Promise<ClassHierarchy> {
+  const res = await fetch(`${API_BASE}/docgraph/class-hierarchy/${encodeURIComponent(uuid)}`)
+  if (!res.ok) throw new Error('Failed to fetch class hierarchy')
+  return res.json()
+}
+
+// Fetch enhanced entity details (type-safe version for enhanced data)
+export async function fetchEnhancedEntity(uuid: string): Promise<EnhancedDocGraphEntity> {
+  const res = await fetch(`${API_BASE}/docgraph/entity/${encodeURIComponent(uuid)}`)
+  if (!res.ok) throw new Error('Entity not found')
+  return res.json()
+}

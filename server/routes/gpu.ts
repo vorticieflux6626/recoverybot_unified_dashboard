@@ -1,11 +1,12 @@
 import { Router } from 'express'
+import { MEMOS_BASE_URL } from '../../config/ports'
 
 export const gpuRouter = Router()
 
 // GET /api/gpu/status - Proxy to memOS GPU endpoint
 gpuRouter.get('/status', async (req, res) => {
   try {
-    const response = await fetch('http://localhost:8001/api/v1/models/gpu/status')
+    const response = await fetch(`${MEMOS_BASE_URL}/api/v1/models/gpu/status`)
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)

@@ -6,8 +6,9 @@ import { LogsTab } from '@/components/tabs/LogsTab'
 import { DocsTab } from '@/components/tabs/DocsTab'
 import { SettingsTab } from '@/components/tabs/SettingsTab'
 import { AgentConsole } from '@/components/agent/AgentConsole'
+import { CodeIntelligenceTab } from '@/components/tabs/CodeIntelligenceTab'
 
-export type TabType = 'overview' | 'agent' | 'logs' | 'docs' | 'settings'
+export type TabType = 'overview' | 'agent' | 'logs' | 'docs' | 'code-intel' | 'settings'
 
 function App() {
   const [activeTab, setActiveTab] = useState<TabType>('overview')
@@ -22,6 +23,8 @@ function App() {
         return <LogsTab />
       case 'docs':
         return <DocsTab />
+      case 'code-intel':
+        return <CodeIntelligenceTab />
       case 'settings':
         return <SettingsTab />
       default:

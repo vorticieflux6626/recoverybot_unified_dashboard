@@ -9,6 +9,7 @@ interface HeaderProps {
 const tabTitles: Record<TabType, string> = {
   overview: 'System Overview',
   agent: 'Agent Console',
+  'code-intel': 'Code Intelligence',
   logs: 'Log Viewer',
   docs: 'Documentation Browser',
   settings: 'Settings',

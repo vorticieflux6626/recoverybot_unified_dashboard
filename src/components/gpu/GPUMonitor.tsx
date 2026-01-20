@@ -126,14 +126,20 @@ export function GPUMonitor() {
           <div className="pt-2 border-t border-border">
             <p className="text-xs text-muted-foreground mb-2">Loaded Models:</p>
             <div className="flex flex-wrap gap-1">
-              {displayData.loadedModels.map((model) => (
-                <span
-                  key={model}
-                  className="px-2 py-0.5 bg-muted text-xs rounded text-foreground"
-                >
-                  {model}
-                </span>
-              ))}
+              {displayData.loadedModels.map((model, index) => {
+                const modelName = typeof model === 'string' ? model : model.name
+                const vramGb = typeof model === 'object' && model.vram_gb ? model.vram_gb : null
+                return (
+                  <span
+                    key={modelName || index}
+                    className="px-2 py-0.5 bg-muted text-xs rounded text-foreground"
+                    title={vramGb ? `${vramGb} GB VRAM` : undefined}
+                  >
+                    {modelName}
+                    {vramGb && <span className="text-muted-foreground ml-1">({vramGb}GB)</span>}
+                  </span>
+                )
+              })}
             </div>
           </div>
         )}

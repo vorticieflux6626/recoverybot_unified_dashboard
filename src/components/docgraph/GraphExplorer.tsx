@@ -59,6 +59,11 @@ export function GraphExplorer({ initialNodeId, onSelectNode }: GraphExplorerProp
   const dropdownRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
+  // Debug: track which nodes have been painted for hit detection
+  const hitDetectionStats = useRef<{ painted: Set<string>; skipped: Map<string, string> }>({
+    painted: new Set(),
+    skipped: new Map()
+  })
 
   // Resize observer for container
   useEffect(() => {
@@ -184,33 +189,43 @@ export function GraphExplorer({ initialNodeId, onSelectNode }: GraphExplorerProp
       connectedIds.add(e.target)
     })
 
-    return {
-      nodes: nodes.map((n, i) => {
-        // Provide initial positions in a radial layout
-        // This ensures all nodes have valid starting coordinates
-        const isIsolated = !connectedIds.has(n.id)
-        const angle = (2 * Math.PI * i) / nodes.length
-        // Isolated nodes start further out
-        const radius = isIsolated ? 250 + Math.random() * 50 : 100 + Math.random() * 100
+    // Create nodes with initial positions and computed values
+    const nodesWithPositions = nodes.map((n, i) => {
+      // Provide initial positions in a radial layout
+      // This ensures all nodes have valid starting coordinates
+      const isIsolated = !connectedIds.has(n.id)
+      const angle = (2 * Math.PI * i) / nodes.length
+      // Isolated nodes start further out
+      const radius = isIsolated ? 250 + Math.random() * 50 : 100 + Math.random() * 100
 
-        return {
-          ...n,
-          // Scale val between 10 and 30 based on relative degree - ensure minimum size for clickability
-          val: Math.max(10, 10 + (n.degreeNum / maxDegree) * 20),
-          // Initial position (will be overwritten by simulation, but ensures valid starting point)
-          fx: undefined, // Don't fix position
-          fy: undefined,
-          x: Math.cos(angle) * radius,
-          y: Math.sin(angle) * radius,
-          // Mark isolated nodes for debugging
-          _isolated: isIsolated,
-        }
-      }),
-      links: (graphData.edges || []).map(e => ({
-        source: e.source,
-        target: e.target,
-        type: e.type,
-      })),
+      return {
+        ...n,
+        // Scale val between 10 and 30 based on relative degree - ensure minimum size for clickability
+        val: Math.max(10, 10 + (n.degreeNum / maxDegree) * 20),
+        // Initial position (will be overwritten by simulation, but ensures valid starting point)
+        fx: undefined, // Don't fix position
+        fy: undefined,
+        x: Math.cos(angle) * radius,
+        y: Math.sin(angle) * radius,
+        // Mark isolated nodes for debugging
+        _isolated: isIsolated,
+      }
+    })
+
+    // Sort nodes so larger ones are drawn first (background) and smaller ones last (foreground)
+    // This ensures smaller nodes remain clickable when overlapping with larger ones
+    nodesWithPositions.sort((a, b) => (b.val || 10) - (a.val || 10))
+
+    return {
+      nodes: nodesWithPositions,
+      // Filter out self-referencing edges (node calling itself) to avoid DAG cycle errors
+      links: (graphData.edges || [])
+        .filter(e => e.source !== e.target)
+        .map(e => ({
+          source: e.source,
+          target: e.target,
+          type: e.type,
+        })),
       maxDegree,
     }
   }, [graphData])
@@ -240,14 +255,16 @@ export function GraphExplorer({ initialNodeId, onSelectNode }: GraphExplorerProp
 
     // Add collision detection to prevent node overlap
     // This ensures nodes don't overlap even when forces would push them together
+    // Overlap is the main cause of nodes being non-interactive (hit detection fails)
     const collisionForce = forceCollide<any>()
       .radius((node: any) => {
-        // Collision radius = visual radius + padding
+        // Collision radius = visual radius + generous padding
+        // Larger padding ensures nodes stay far enough apart for reliable hit detection
         const nodeSize = Math.sqrt(node.val || 10) * 2.5
-        return nodeSize + 8 // 8px padding between nodes
+        return nodeSize + 15 // 15px padding between nodes (increased from 8)
       })
-      .strength(0.8) // How strongly to enforce non-overlap (0-1)
-      .iterations(2) // More iterations = more accurate but slower
+      .strength(1.0) // Maximum strength to enforce non-overlap
+      .iterations(4) // More iterations for better accuracy
 
     fg.d3Force('collision', collisionForce)
 
@@ -278,6 +295,7 @@ export function GraphExplorer({ initialNodeId, onSelectNode }: GraphExplorerProp
   }, [forceGraphData])
 
   const handleNodeClick = useCallback((node: any) => {
+    console.log('[GraphExplorer] Node clicked:', { id: node.id, name: node.name, type: node.type, _isolated: node._isolated })
     setSelectedNodeId(node.id)
     onSelectNode?.(node.id)
 
@@ -329,6 +347,12 @@ export function GraphExplorer({ initialNodeId, onSelectNode }: GraphExplorerProp
     }
 
     if (nearestNode) {
+      console.log('[GraphExplorer] Proximity click - nearest node:', {
+        id: nearestNode.id,
+        name: nearestNode.name,
+        distance: nearestDistance.toFixed(1),
+        _isolated: nearestNode._isolated
+      })
       setSelectedNodeId(nearestNode.id)
       onSelectNode?.(nearestNode.id)
       // Don't auto-zoom on proximity click - user may have intentionally zoomed out
@@ -339,6 +363,10 @@ export function GraphExplorer({ initialNodeId, onSelectNode }: GraphExplorerProp
     setHoveredNode(node || null)
     if (containerRef.current) {
       containerRef.current.style.cursor = node ? 'pointer' : 'default'
+    }
+    // Debug: log when hover starts/ends
+    if (node) {
+      console.debug('[GraphExplorer] Hover:', { id: node.id, name: node.name, x: node.x?.toFixed(1), y: node.y?.toFixed(1), val: node.val })
     }
   }, [])
 
@@ -370,8 +398,9 @@ export function GraphExplorer({ initialNodeId, onSelectNode }: GraphExplorerProp
   }, [forceGraphData.nodes, onSelectNode])
 
   // Track zoom level for LOD rendering
+  // Use setTimeout to avoid setState during render warning
   const handleZoomChange = useCallback((transform: { k: number }) => {
-    setCurrentZoom(transform.k)
+    setTimeout(() => setCurrentZoom(transform.k), 0)
   }, [])
 
   // Custom node rendering with level-of-detail
@@ -543,7 +572,14 @@ export function GraphExplorer({ initialNodeId, onSelectNode }: GraphExplorerProp
     // We paint that color in the area where we want the node to be clickable
     const x = node.x
     const y = node.y
-    if (x == null || y == null || isNaN(x) || isNaN(y)) return
+
+    // Track which nodes have valid positions for hit detection
+    if (x == null || y == null || isNaN(x) || isNaN(y)) {
+      hitDetectionStats.current.skipped.set(node.id, `Invalid pos: x=${x}, y=${y}`)
+      return
+    }
+
+    hitDetectionStats.current.painted.add(node.id)
 
     // Match visual node size exactly - no padding to reduce overlap issues
     const nodeSize = Math.sqrt(node.val || 10) * 2.5
@@ -751,11 +787,31 @@ export function GraphExplorer({ initialNodeId, onSelectNode }: GraphExplorerProp
               nodeCanvasObject={nodeCanvasObject}
               nodeCanvasObjectMode={() => 'replace'}
               nodePointerAreaPaint={nodePointerAreaPaint}
+              nodeVal={(node: any) => node.val || 10}
               linkCanvasObject={linkCanvasObject}
               onNodeClick={handleNodeClick}
               onNodeHover={handleNodeHover}
-              onNodeDrag={handleNodeHover}
-              onNodeDragEnd={() => setHoveredNode(null)}
+              onNodeDrag={(node: any) => {
+                setHoveredNode(node)
+              }}
+              // Spread additional props that exist in library but not in types
+              {...{
+                onNodeDragStart: (node: any) => {
+                  console.log('[GraphExplorer] Drag start:', { id: node.id, name: node.name, x: node.x, y: node.y })
+                  // Pause simulation during drag for stability
+                  if (graphRef.current) {
+                    graphRef.current.pauseAnimation()
+                  }
+                },
+                onNodeDragEnd: (node: any) => {
+                  console.log('[GraphExplorer] Drag end:', { id: node.id, name: node.name })
+                  setHoveredNode(null)
+                  // Resume simulation after drag
+                  if (graphRef.current) {
+                    graphRef.current.resumeAnimation()
+                  }
+                },
+              } as any}
               onBackgroundClick={handleBackgroundClick}
               onZoom={handleZoomChange}
               nodeLabel={() => ''}
@@ -764,8 +820,8 @@ export function GraphExplorer({ initialNodeId, onSelectNode }: GraphExplorerProp
               enablePanInteraction={true}
               linkDirectionalArrowLength={0}
               linkWidth={2}
-              cooldownTicks={150}
-              warmupTicks={50}
+              cooldownTicks={200}
+              warmupTicks={100}
               backgroundColor="transparent"
               d3AlphaDecay={0.015}
               d3VelocityDecay={0.25}
@@ -794,6 +850,46 @@ export function GraphExplorer({ initialNodeId, onSelectNode }: GraphExplorerProp
                     isolatedNodes.map((n: any) => ({ id: n.id, name: n.name, x: n.x?.toFixed(1), y: n.y?.toFixed(1) }))
                   )
                 }
+
+                // Check for overlapping nodes (potential hit detection issues)
+                const validNodes = forceGraphData.nodes.filter((n: any) =>
+                  n.x != null && n.y != null && !isNaN(n.x) && !isNaN(n.y)
+                )
+                const overlaps: Array<{ node1: string; node2: string; distance: number; minDist: number }> = []
+                for (let i = 0; i < validNodes.length; i++) {
+                  for (let j = i + 1; j < validNodes.length; j++) {
+                    const n1 = validNodes[i] as any
+                    const n2 = validNodes[j] as any
+                    const dx = n1.x - n2.x
+                    const dy = n1.y - n2.y
+                    const distance = Math.sqrt(dx * dx + dy * dy)
+                    const size1 = Math.sqrt(n1.val || 10) * 2.5
+                    const size2 = Math.sqrt(n2.val || 10) * 2.5
+                    const minDistance = size1 + size2 // Sum of radii
+                    if (distance < minDistance) {
+                      overlaps.push({
+                        node1: n1.name,
+                        node2: n2.name,
+                        distance: Math.round(distance),
+                        minDist: Math.round(minDistance)
+                      })
+                    }
+                  }
+                }
+                if (overlaps.length > 0) {
+                  console.warn(`[GraphExplorer] ${overlaps.length} overlapping node pairs detected:`, overlaps.slice(0, 10))
+                } else {
+                  console.info('[GraphExplorer] No overlapping nodes detected')
+                }
+
+                // Log hit detection stats
+                const { painted, skipped } = hitDetectionStats.current
+                console.info(`[GraphExplorer] Hit detection: ${painted.size} painted, ${skipped.size} skipped`)
+                if (skipped.size > 0) {
+                  console.warn('[GraphExplorer] Skipped nodes:', Object.fromEntries(skipped))
+                }
+                // Reset for next frame
+                hitDetectionStats.current = { painted: new Set(), skipped: new Map() }
               }}
             />
           )}

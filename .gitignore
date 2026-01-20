@@ -30,3 +30,5 @@ Thumbs.db
 
 # TypeScript build info
 *.tsbuildinfo
+.kit/
+ecosystem_config

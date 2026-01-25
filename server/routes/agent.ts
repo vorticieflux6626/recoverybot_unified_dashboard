@@ -389,6 +389,291 @@ agentRouter.get('/observability/:requestId', async (req: Request, res: Response)
 })
 
 // ============================================================================
+// Phase 4: Observability Detail Endpoints
+// Extract specific parts of observability data for the Agent Console tabs
+// ============================================================================
+
+// Helper function to fetch full observability data
+async function fetchObservabilityData(requestId: string) {
+  const response = await fetch(
+    `${MEMOS_BASE_URL}/api/v1/observability/request/${requestId}`,
+    { signal: AbortSignal.timeout(10000) }
+  )
+  if (!response.ok) {
+    throw new Error(`memOS returned ${response.status}: ${response.statusText}`)
+  }
+  return response.json()
+}
+
+// GET /api/agent/observability/:requestId/decisions - Extract decisions for Decision Log Tab
+agentRouter.get('/observability/:requestId/decisions', async (req: Request, res: Response) => {
+  const { requestId } = req.params
+
+  try {
+    const data = await fetchObservabilityData(requestId)
+    const decisions = data.data?.decisions || data.decisions || []
+
+    // Format decisions for timeline display
+    const formattedDecisions = decisions.map((d: any, index: number) => ({
+      id: d.id || `decision-${index}`,
+      timestamp: d.timestamp,
+      agent: d.agent || d.agent_name,
+      decision_type: d.decision_type || d.type,
+      decision: d.decision || d.value,
+      reasoning: d.reasoning || d.rationale,
+      alternatives: d.alternatives || [],
+      confidence: d.confidence,
+      context: d.context || {},
+    }))
+
+    res.json({
+      success: true,
+      data: {
+        decisions: formattedDecisions,
+        count: formattedDecisions.length,
+      },
+      meta: { timestamp: new Date().toISOString(), requestId },
+    })
+  } catch (err) {
+    const error = err as Error
+    res.status(500).json({
+      success: false,
+      data: { decisions: [], count: 0 },
+      errors: [error.message],
+    })
+  }
+})
+
+// GET /api/agent/observability/:requestId/context-flow - Extract context transfers for Context Flow Tab
+agentRouter.get('/observability/:requestId/context-flow', async (req: Request, res: Response) => {
+  const { requestId } = req.params
+
+  try {
+    const data = await fetchObservabilityData(requestId)
+    const transfers = data.data?.context_transfers || data.context_transfers || []
+
+    // Format for Sankey diagram visualization
+    const nodes = new Map<string, { id: string; name: string; tokens: number }>()
+    const links: { source: string; target: string; value: number }[] = []
+
+    transfers.forEach((t: any) => {
+      const sourceId = t.source_agent || t.from || 'input'
+      const targetId = t.target_agent || t.to || 'output'
+      const tokens = t.token_count || t.tokens || 0
+
+      if (!nodes.has(sourceId)) {
+        nodes.set(sourceId, { id: sourceId, name: sourceId, tokens: 0 })
+      }
+      if (!nodes.has(targetId)) {
+        nodes.set(targetId, { id: targetId, name: targetId, tokens: 0 })
+      }
+
+      const sourceNode = nodes.get(sourceId)!
+      sourceNode.tokens += tokens
+
+      links.push({
+        source: sourceId,
+        target: targetId,
+        value: tokens,
+      })
+    })
+
+    res.json({
+      success: true,
+      data: {
+        transfers: transfers,
+        sankey: {
+          nodes: Array.from(nodes.values()),
+          links: links,
+        },
+        total_tokens: transfers.reduce((sum: number, t: any) => sum + (t.token_count || t.tokens || 0), 0),
+        count: transfers.length,
+      },
+      meta: { timestamp: new Date().toISOString(), requestId },
+    })
+  } catch (err) {
+    const error = err as Error
+    res.status(500).json({
+      success: false,
+      data: { transfers: [], sankey: { nodes: [], links: [] }, total_tokens: 0, count: 0 },
+      errors: [error.message],
+    })
+  }
+})
+
+// GET /api/agent/observability/:requestId/llm-calls - Extract LLM calls for LLM Calls Tab
+agentRouter.get('/observability/:requestId/llm-calls', async (req: Request, res: Response) => {
+  const { requestId } = req.params
+  const { sort = 'timestamp', order = 'asc' } = req.query
+
+  try {
+    const data = await fetchObservabilityData(requestId)
+    const llmCalls = data.data?.llm_calls || data.llm_calls || []
+
+    // Format LLM calls with metrics
+    const formattedCalls = llmCalls.map((call: any, index: number) => ({
+      id: call.id || `llm-${index}`,
+      timestamp: call.timestamp || call.started_at,
+      agent: call.agent || call.agent_name,
+      model: call.model || call.model_name,
+      prompt_tokens: call.prompt_tokens || call.input_tokens || 0,
+      completion_tokens: call.completion_tokens || call.output_tokens || 0,
+      total_tokens: (call.prompt_tokens || call.input_tokens || 0) + (call.completion_tokens || call.output_tokens || 0),
+      latency_ms: call.latency_ms || call.duration_ms || 0,
+      success: call.success !== false,
+      error: call.error,
+      purpose: call.purpose || call.operation,
+    }))
+
+    // Sort calls
+    if (sort === 'latency') {
+      formattedCalls.sort((a: any, b: any) => order === 'desc' ? b.latency_ms - a.latency_ms : a.latency_ms - b.latency_ms)
+    } else if (sort === 'tokens') {
+      formattedCalls.sort((a: any, b: any) => order === 'desc' ? b.total_tokens - a.total_tokens : a.total_tokens - b.total_tokens)
+    } else {
+      formattedCalls.sort((a: any, b: any) => {
+        const aTime = new Date(a.timestamp).getTime()
+        const bTime = new Date(b.timestamp).getTime()
+        return order === 'desc' ? bTime - aTime : aTime - bTime
+      })
+    }
+
+    // Calculate aggregates
+    const totalLatency = formattedCalls.reduce((sum: number, c: any) => sum + c.latency_ms, 0)
+    const totalTokens = formattedCalls.reduce((sum: number, c: any) => sum + c.total_tokens, 0)
+    const totalInputTokens = formattedCalls.reduce((sum: number, c: any) => sum + c.prompt_tokens, 0)
+    const totalOutputTokens = formattedCalls.reduce((sum: number, c: any) => sum + c.completion_tokens, 0)
+
+    res.json({
+      success: true,
+      data: {
+        calls: formattedCalls,
+        count: formattedCalls.length,
+        aggregates: {
+          total_latency_ms: totalLatency,
+          avg_latency_ms: formattedCalls.length > 0 ? Math.round(totalLatency / formattedCalls.length) : 0,
+          total_tokens: totalTokens,
+          input_tokens: totalInputTokens,
+          output_tokens: totalOutputTokens,
+          success_rate: formattedCalls.length > 0 ? formattedCalls.filter((c: any) => c.success).length / formattedCalls.length : 0,
+        },
+      },
+      meta: { timestamp: new Date().toISOString(), requestId },
+    })
+  } catch (err) {
+    const error = err as Error
+    res.status(500).json({
+      success: false,
+      data: { calls: [], count: 0, aggregates: {} },
+      errors: [error.message],
+    })
+  }
+})
+
+// GET /api/agent/observability/:requestId/scratchpad - Extract scratchpad changes for Scratchpad Tab
+agentRouter.get('/observability/:requestId/scratchpad', async (req: Request, res: Response) => {
+  const { requestId } = req.params
+
+  try {
+    const data = await fetchObservabilityData(requestId)
+    const changes = data.data?.scratchpad_changes || data.scratchpad_changes || []
+
+    // Format scratchpad changes as state evolution
+    const formattedChanges = changes.map((change: any, index: number) => ({
+      id: change.id || `scratchpad-${index}`,
+      timestamp: change.timestamp,
+      agent: change.agent || change.agent_name,
+      operation: change.operation || change.action, // 'add', 'update', 'remove'
+      field: change.field || change.key,
+      value: change.value || change.new_value,
+      previous_value: change.previous_value || change.old_value,
+      reason: change.reason,
+    }))
+
+    // Build current state from changes
+    const currentState: Record<string, any> = {}
+    const stateHistory: { timestamp: string; state: Record<string, any> }[] = []
+
+    for (const change of formattedChanges) {
+      if (change.operation === 'remove') {
+        delete currentState[change.field]
+      } else {
+        currentState[change.field] = change.value
+      }
+      stateHistory.push({
+        timestamp: change.timestamp,
+        state: { ...currentState },
+      })
+    }
+
+    res.json({
+      success: true,
+      data: {
+        changes: formattedChanges,
+        current_state: currentState,
+        state_history: stateHistory,
+        count: formattedChanges.length,
+      },
+      meta: { timestamp: new Date().toISOString(), requestId },
+    })
+  } catch (err) {
+    const error = err as Error
+    res.status(500).json({
+      success: false,
+      data: { changes: [], current_state: {}, state_history: [], count: 0 },
+      errors: [error.message],
+    })
+  }
+})
+
+// GET /api/agent/observability/:requestId/confidence - Extract confidence breakdown for Confidence Tab
+agentRouter.get('/observability/:requestId/confidence', async (req: Request, res: Response) => {
+  const { requestId } = req.params
+
+  try {
+    const data = await fetchObservabilityData(requestId)
+    const breakdown = data.data?.confidence_breakdown || data.confidence_breakdown || {}
+    const history = data.data?.confidence_history || data.confidence_history || []
+
+    // Format confidence breakdown
+    const signals = Object.entries(breakdown).map(([signal, value]) => ({
+      signal,
+      value: typeof value === 'number' ? value : (value as any)?.score || 0,
+      weight: (value as any)?.weight || 1.0,
+      description: (value as any)?.description || '',
+    }))
+
+    // Calculate weighted average
+    const totalWeight = signals.reduce((sum, s) => sum + s.weight, 0)
+    const weightedSum = signals.reduce((sum, s) => sum + s.value * s.weight, 0)
+    const overallConfidence = totalWeight > 0 ? weightedSum / totalWeight : 0
+
+    res.json({
+      success: true,
+      data: {
+        overall_confidence: overallConfidence,
+        signals,
+        history: history.map((h: any) => ({
+          timestamp: h.timestamp,
+          confidence: h.confidence || h.value,
+          agent: h.agent,
+          reason: h.reason,
+        })),
+        breakdown_raw: breakdown,
+      },
+      meta: { timestamp: new Date().toISOString(), requestId },
+    })
+  } catch (err) {
+    const error = err as Error
+    res.status(500).json({
+      success: false,
+      data: { overall_confidence: 0, signals: [], history: [], breakdown_raw: {} },
+      errors: [error.message],
+    })
+  }
+})
+
+// ============================================================================
 // LLM Model Configuration API - Proxies to memOS config endpoints
 // ============================================================================
 

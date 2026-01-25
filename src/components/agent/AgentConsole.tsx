@@ -1,7 +1,16 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Bot, Play, Square, Trash2, ChevronDown, ChevronRight, Clock, Zap, Brain, Search, CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
+import { Bot, Play, Square, Trash2, ChevronDown, ChevronRight, Clock, Zap, Brain, Search, CheckCircle, XCircle, AlertTriangle, Activity, FileText, TrendingUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AgentConfigPanel } from './config'
+import { DecisionLogTab, ContextFlowTab, LLMCallsTab, ScratchpadTab, ConfidenceTab } from './tabs'
+
+type TabId = 'overview' | 'decisions' | 'context' | 'llm' | 'scratchpad' | 'confidence'
+
+interface TabConfig {
+  id: TabId
+  label: string
+  icon: React.ReactNode
+}
 
 interface AgentEvent {
   id: string
@@ -135,6 +144,15 @@ function RunSummary({ run }: { run: AgentRun }) {
   )
 }
 
+const TABS: TabConfig[] = [
+  { id: 'overview', label: 'Overview', icon: <Zap className="w-4 h-4" /> },
+  { id: 'decisions', label: 'Decisions', icon: <Brain className="w-4 h-4" /> },
+  { id: 'context', label: 'Context Flow', icon: <Activity className="w-4 h-4" /> },
+  { id: 'llm', label: 'LLM Calls', icon: <Zap className="w-4 h-4" /> },
+  { id: 'scratchpad', label: 'Scratchpad', icon: <FileText className="w-4 h-4" /> },
+  { id: 'confidence', label: 'Confidence', icon: <TrendingUp className="w-4 h-4" /> },
+]
+
 export function AgentConsole() {
   const [runs, setRuns] = useState<AgentRun[]>([])
   const [selectedRun, setSelectedRun] = useState<string | null>(null)
@@ -146,6 +164,7 @@ export function AgentConsole() {
   const [testQuery, setTestQuery] = useState('')
   const [isRunning, setIsRunning] = useState(false)
   const [memosStatus, setMemosStatus] = useState<'unknown' | 'connected' | 'disconnected'>('unknown')
+  const [activeTab, setActiveTab] = useState<TabId>('overview')
   const eventsEndRef = useRef<HTMLDivElement>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
   const globalStreamRef = useRef<EventSource | null>(null)
@@ -564,71 +583,123 @@ export function AgentConsole() {
           </div>
         </div>
 
-        {/* Event Stream */}
+        {/* Event Stream / Observability Tabs */}
         <div className="flex-1 bg-card border border-border rounded-lg overflow-hidden flex flex-col">
-          <div className="p-3 border-b border-border bg-muted/50 flex items-center justify-between">
-            <h3 className="font-semibold text-foreground text-sm flex items-center gap-2">
-              <Zap className="w-4 h-4" />
-              {isLiveMode && !selectedRun ? 'Live Event Feed' : 'Event Stream'}
-              <span className="text-xs font-normal text-muted-foreground">
-                ({displayEvents.length} events)
-              </span>
-            </h3>
-            <div className="flex items-center gap-3">
-              <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                <input
-                  type="checkbox"
-                  checked={autoScroll}
-                  onChange={(e) => setAutoScroll(e.target.checked)}
-                  className="rounded"
-                />
-                Auto-scroll
-              </label>
-              {isConnected && (
-                <span className="flex items-center gap-1 text-xs text-green-500">
-                  <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                  Live
-                </span>
-              )}
-            </div>
-          </div>
-
-          {(currentRun || (isLiveMode && displayEvents.length > 0)) ? (
-            <div className="flex-1 overflow-y-auto p-3">
-              {currentRun && <RunSummary run={currentRun} />}
-
-              <div className="space-y-1">
-                {displayEvents.map(event => (
-                  <EventItem
-                    key={event.id}
-                    event={event}
-                    expanded={expandedEvents.has(event.id)}
-                    onToggle={() => toggleEvent(event.id)}
-                  />
+          {/* Tab Navigation */}
+          <div className="border-b border-border bg-muted/50">
+            <div className="flex items-center justify-between px-3 pt-3">
+              <div className="flex items-center gap-1 overflow-x-auto pb-0">
+                {TABS.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={cn(
+                      "flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-t-lg transition-colors whitespace-nowrap",
+                      activeTab === tab.id
+                        ? "bg-card text-foreground border-t border-l border-r border-border -mb-px"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                    )}
+                  >
+                    {tab.icon}
+                    {tab.label}
+                  </button>
                 ))}
-                <div ref={eventsEndRef} />
               </div>
-
-              {currentRun?.status === 'running' && displayEvents.length === 0 && (
-                <div className="flex items-center justify-center h-32 text-muted-foreground">
-                  <div className="text-center">
-                    <Bot className="w-8 h-8 mx-auto mb-2 animate-pulse" />
-                    <p className="text-sm">Waiting for events...</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="flex-1 flex items-center justify-center text-muted-foreground">
-              <div className="text-center">
-                <Bot className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>{isLiveMode ? 'Waiting for live events...' : 'Select a run or start a new agent query'}</p>
-                {!isLiveMode && (
-                  <p className="text-xs mt-2">Click "Connect Live Feed" to monitor all agent activity</p>
+              <div className="flex items-center gap-3 pb-2">
+                {activeTab === 'overview' && (
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={autoScroll}
+                      onChange={(e) => setAutoScroll(e.target.checked)}
+                      className="rounded"
+                    />
+                    Auto-scroll
+                  </label>
+                )}
+                {isConnected && (
+                  <span className="flex items-center gap-1 text-xs text-green-500">
+                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                    Live
+                  </span>
                 )}
               </div>
             </div>
-          )}
+          </div>
+
+          {/* Tab Content */}
+          <div className="flex-1 overflow-hidden">
+            {activeTab === 'overview' && (
+              <div className="h-full overflow-y-auto">
+                {(currentRun || (isLiveMode && displayEvents.length > 0)) ? (
+                  <div className="p-3">
+                    {currentRun && <RunSummary run={currentRun} />}
+
+                    <div className="space-y-1">
+                      {displayEvents.map(event => (
+                        <EventItem
+                          key={event.id}
+                          event={event}
+                          expanded={expandedEvents.has(event.id)}
+                          onToggle={() => toggleEvent(event.id)}
+                        />
+                      ))}
+                      <div ref={eventsEndRef} />
+                    </div>
+
+                    {currentRun?.status === 'running' && displayEvents.length === 0 && (
+                      <div className="flex items-center justify-center h-32 text-muted-foreground">
+                        <div className="text-center">
+                          <Bot className="w-8 h-8 mx-auto mb-2 animate-pulse" />
+                          <p className="text-sm">Waiting for events...</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-muted-foreground">
+                    <div className="text-center">
+                      <Bot className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                      <p>{isLiveMode ? 'Waiting for live events...' : 'Select a run or start a new agent query'}</p>
+                      {!isLiveMode && (
+                        <p className="text-xs mt-2">Click "Connect Live Feed" to monitor all agent activity</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'decisions' && (
+              <div className="h-full overflow-y-auto">
+                <DecisionLogTab requestId={selectedRun} />
+              </div>
+            )}
+
+            {activeTab === 'context' && (
+              <div className="h-full overflow-y-auto">
+                <ContextFlowTab requestId={selectedRun} />
+              </div>
+            )}
+
+            {activeTab === 'llm' && (
+              <div className="h-full overflow-y-auto">
+                <LLMCallsTab requestId={selectedRun} />
+              </div>
+            )}
+
+            {activeTab === 'scratchpad' && (
+              <div className="h-full overflow-y-auto">
+                <ScratchpadTab requestId={selectedRun} />
+              </div>
+            )}
+
+            {activeTab === 'confidence' && (
+              <div className="h-full overflow-y-auto">
+                <ConfidenceTab requestId={selectedRun} />
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

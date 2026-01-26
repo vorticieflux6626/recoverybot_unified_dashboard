@@ -153,6 +153,22 @@ import { DASHBOARD_FRONTEND_PORT, SERVICE_LINKS } from '@config/ports'
 | `/api/docgraph/callees/:uuid` | GET | Get functions called by entity |
 | `/api/docgraph/projects` | GET | List indexed projects |
 | `/api/docgraph/health` | GET | DocGraph service health |
+| `/api/docgraph/source` | GET | Fetch source code with line context |
+| `/api/docgraph/files` | GET | File tree with entity counts |
+| `/api/docgraph/class-hierarchy/:uuid` | GET | Class inheritance hierarchy |
+| `/api/docgraph/graph/sample` | GET | Graph exploration sample |
+| `/api/docgraph/graph/:uuid` | GET | Entity-centered graph data |
+| `/api/agent/search` | POST | Proxy agentic search to memOS |
+| `/api/agent/stream/global` | SSE | Global observability event stream |
+| `/api/agent/events/:requestId` | SSE | Request-specific event stream |
+| `/api/agent/history` | GET | Recent search history |
+| `/api/agent/memos/stats` | GET | memOS statistics |
+| `/api/agent/observability/:requestId` | GET | Request observability summary |
+| `/api/agent/observability/:requestId/decisions` | GET | Agent decision timeline |
+| `/api/agent/observability/:requestId/context-flow` | GET | Token flow Sankey data |
+| `/api/agent/observability/:requestId/llm-calls` | GET | LLM call metrics |
+| `/api/agent/observability/:requestId/scratchpad` | GET | Scratchpad state evolution |
+| `/api/agent/observability/:requestId/confidence` | GET | Confidence breakdown |
 
 ### LLM Model Configuration API (memOS)
 
@@ -409,4 +425,4 @@ The configuration panel uses a dedicated Zustand store (`agentConfigStore.ts`) w
 
 ---
 
-*Last Updated: 2026-01-12 | Added LLM Gateway (port 8100) to ecosystem orchestration*
+*Last Updated: 2026-01-26 | Added gaming mode detection for CPU/GPU resource management*

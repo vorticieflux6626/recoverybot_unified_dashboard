@@ -35,6 +35,9 @@ GATEWAY="$ECOSYSTEM_ROOT/Recovery_Bot/gateway"
 MCP_NODE_EDITOR="$ECOSYSTEM_ROOT/MCP_Node_Editor"
 MCP_INFRA="$ECOSYSTEM_ROOT/mcp_infrastructure"
 
+# Gaming mode detection script
+GAMING_MODE_SCRIPT="$SCRIPT_DIR/scripts/gaming-mode.sh"
+
 # Log file
 LOG_FILE="$SCRIPT_DIR/ecosystem.log"
 
@@ -118,6 +121,31 @@ log_header() {
 
 log_subheader() {
     echo -e "${BOLD}${MAGENTA}── $1 ──${NC}"
+}
+
+# ============================================================================
+# Gaming Mode Functions
+# ============================================================================
+
+# Source gaming mode detection if available
+load_gaming_mode() {
+    if [[ -f "$GAMING_MODE_SCRIPT" ]]; then
+        source "$GAMING_MODE_SCRIPT"
+        return 0
+    else
+        log_warning "Gaming mode script not found: $GAMING_MODE_SCRIPT"
+        return 1
+    fi
+}
+
+# Check if system is in gaming mode
+check_gaming_mode() {
+    if load_gaming_mode; then
+        if is_gaming; then
+            return 0
+        fi
+    fi
+    return 1
 }
 
 # Parse service definition
@@ -1422,6 +1450,130 @@ cmd_diagnose() {
     free -h | head -2
 }
 
+# ============================================================================
+# Gaming Mode Commands
+# ============================================================================
+
+cmd_gaming() {
+    log_header "Gaming Mode Status"
+
+    if ! load_gaming_mode; then
+        log_error "Gaming mode detection not available"
+        return 1
+    fi
+
+    # Show detailed status
+    get_gaming_status
+
+    echo ""
+    if is_gaming; then
+        echo -e "${YELLOW}━━━ GAMING MODE ACTIVE ━━━${NC}"
+        echo -e "Reason: ${BOLD}$GAMING_MODE_REASON${NC}"
+        echo ""
+        echo "Resource-intensive background tasks will be deferred:"
+        echo "  • DocGraph full indexing (weekly cron)"
+        echo "  • MCP ecosystem re-indexing (nightly cron)"
+        echo ""
+        echo "To pause heavy services manually:"
+        echo "  $0 pause-heavy"
+        echo ""
+    else
+        echo -e "${GREEN}━━━ NOT GAMING ━━━${NC}"
+        echo "All background tasks will run normally."
+    fi
+}
+
+cmd_pause_heavy() {
+    log_header "Pausing Heavy Services for Gaming"
+
+    echo "This will stop CPU/GPU intensive services to free up resources for gaming."
+    echo "Services that will be stopped:"
+    echo "  • pdf-tools (graph loading uses significant RAM/CPU)"
+    echo "  • memos (LLM inference)"
+    echo "  • gateway (embedding generation)"
+    echo "  • docling (document processing)"
+    echo ""
+
+    # Stop heavy services
+    local stopped=0
+
+    # Stop in order of resource usage (heaviest first)
+    if curl -s "http://localhost:8002/health" >/dev/null 2>&1; then
+        log_info "Stopping PDF Tools..."
+        stop_pdf_tools
+        ((stopped++))
+    fi
+
+    if curl -s "http://localhost:8001/" >/dev/null 2>&1; then
+        log_info "Stopping memOS..."
+        stop_memos
+        ((stopped++))
+    fi
+
+    if curl -s "http://localhost:8100/health" >/dev/null 2>&1; then
+        log_info "Stopping Gateway..."
+        stop_gateway
+        ((stopped++))
+    fi
+
+    if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "memos-docling"; then
+        log_info "Stopping Docling..."
+        stop_docling
+        ((stopped++))
+    fi
+
+    echo ""
+    if [ $stopped -gt 0 ]; then
+        log_success "Stopped $stopped heavy service(s)"
+        echo ""
+        echo "Ollama and databases remain running for basic queries."
+        echo "Run '$0 resume-heavy' to restart these services."
+    else
+        log_info "No heavy services were running"
+    fi
+
+    # Show gaming tips
+    echo ""
+    echo -e "${CYAN}Gaming Tips:${NC}"
+    echo "  • Ollama will still respond to model queries"
+    echo "  • Dashboard remains accessible for monitoring"
+    echo "  • Cron jobs will auto-defer if gaming is detected"
+}
+
+cmd_resume_heavy() {
+    log_header "Resuming Heavy Services"
+
+    # Check if gaming is still active
+    if load_gaming_mode && is_gaming; then
+        log_warning "Gaming still detected: $GAMING_MODE_REASON"
+        echo ""
+        read -p "Resume heavy services anyway? [y/N] " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log_info "Aborted - services remain stopped"
+            return 0
+        fi
+    fi
+
+    local started=0
+
+    # Start in dependency order
+    log_info "Starting Docling..."
+    start_docling && ((started++))
+
+    log_info "Starting PDF Tools..."
+    start_pdf_tools && ((started++))
+
+    log_info "Starting memOS..."
+    start_memos && ((started++))
+
+    log_info "Starting Gateway..."
+    start_gateway && ((started++))
+
+    echo ""
+    log_success "Started $started heavy service(s)"
+}
+
 cmd_help() {
     echo "RecoveryBot Ecosystem Orchestration"
     echo ""
@@ -1438,6 +1590,12 @@ cmd_help() {
     echo "  health                 Deep health check all services"
     echo "  diagnose               Show diagnostic information for troubleshooting"
     echo "  logs <service>         View logs for a specific service"
+    echo ""
+    echo -e "${CYAN}Gaming Mode Commands:${NC}"
+    echo "  gaming                 Check if system is in gaming mode"
+    echo "  pause-heavy            Stop CPU/GPU heavy services for gaming"
+    echo "  resume-heavy           Restart heavy services after gaming"
+    echo ""
     echo "  help                   Show this help message"
     echo ""
     echo "Services Managed:"
@@ -1498,6 +1656,15 @@ case "${1:-help}" in
     logs)
         shift
         cmd_logs "$@"
+        ;;
+    gaming|game-mode)
+        cmd_gaming
+        ;;
+    pause-heavy|pause)
+        cmd_pause_heavy
+        ;;
+    resume-heavy|resume)
+        cmd_resume_heavy
         ;;
     help|--help|-h)
         cmd_help

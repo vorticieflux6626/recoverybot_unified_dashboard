@@ -1,6 +1,6 @@
 # Unified System Dashboard
 
-> **Created**: 2026-01-03 | **Updated**: 2026-01-18 | **Port**: 3100 | **Version**: 0.4.0
+> **Created**: 2026-01-03 | **Updated**: 2026-01-25 | **Port**: 3100 | **Version**: 0.4.1
 
 ## Quick Reference
 
@@ -40,6 +40,34 @@ See `ECOSYSTEM_CLI_GUIDE.txt` for comprehensive command-line documentation.
 | `./start-prod.sh` | Start dashboard only (production) |
 | `./scripts/ollama.sh` | Ollama LLM management |
 | `./scripts/docker-services.sh` | Docker container management |
+| `./scripts/gaming-mode.sh` | Gaming mode detection utility |
+
+### Gaming Mode
+
+The ecosystem supports automatic deferral of CPU/GPU intensive background tasks when gaming is detected.
+
+**Detection Methods**:
+- Steam client + game processes
+- Proton/Wine processes
+- High GPU utilization (>80%)
+- Systemd gaming inhibitors
+
+**Ecosystem Commands**:
+
+```bash
+./ecosystem.sh gaming       # Check gaming mode status
+./ecosystem.sh pause-heavy  # Pause CPU/GPU intensive services
+./ecosystem.sh resume-heavy # Resume heavy services after gaming
+```
+
+**Affected Background Tasks**:
+- DocGraph full indexing (weekly Sunday 3 AM) - **Deferred if gaming**
+- MCP ecosystem re-indexing (nightly) - **Deferred if gaming**
+- DocGraph incremental sync (every 6h) - Runs normally (lightweight)
+
+**Environment Variables**:
+- `GAMING_MODE_SKIP=1` - Force background tasks to run regardless
+- `GAMING_MODE_GPU_THRESHOLD=80` - GPU % threshold (default: 80)
 
 ### Dependent Services
 
